@@ -13,7 +13,6 @@ from sklearn.metrics import (
 )
 
 # import tensorflow_addons as tfa
-import tensorflow_io as tfio
 import numpy as np
 
 import json

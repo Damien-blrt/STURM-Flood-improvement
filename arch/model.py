@@ -25,7 +25,6 @@ import tensorflow as tf
 
 from tensorflow.keras.regularizers import l2
 
-import tensorflow_io as tfio
 import numpy as np
 
 from losses import *
