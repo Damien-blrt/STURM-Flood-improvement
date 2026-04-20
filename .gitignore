@@ -4,6 +4,8 @@ unet
 STURM-Flood
 inference_metrics.csv
 tile_visualizations
+logs
 inference_results
+*/__pycache__/*
 arch/__pycache__/*
 *.pyc

@@ -18,7 +18,7 @@ from tensorflow.keras import backend as K
 
 # from tensorflow.keras import ops
 
-# import tensorflow_addons as tfa
+import tensorflow_addons as tfa
 from tensorflow.keras import optimizers
 
 import tensorflow as tf
@@ -136,7 +136,7 @@ def unet_model(
     normalize_inputs=True,
     optimizer="adam",
     loss_function="categorical_crossentropy",
-    metrics=["categorical_accuracy"],
+    metrics=["f1_score"],
 ):
     inputs = Input((tile_width, tile_height, n_bands))
     x = inputs  # Initialize x to be the input tensor
@@ -232,7 +232,7 @@ def unet_model(
     model.compile(
         optimizer=optimizer,  # "adam",  # optimizers.experimental.SGD(learning_rate=learning_rate), The learning rate. Defaults to .: model.compile(optimizer=keras.optimizers.Adam(learning_rate=5e-4)) model.compile(optimizer=tf.keras.optimizers.Adam(learning_rate=1e-3)
         loss=loss,  # "categorical_crossentropy",  # weighted_binary_crossentropy,
-        metrics=metrics,   # [
+        metrics=metrics   # [
         #     "categorical_accuracy",
         #     # tfa.metrics.F1Score(
         #     #     num_classes=n_classes, average=None
@@ -248,7 +248,7 @@ def unet_model(
     #     class_loglosses = K.mean(K.binary_crossentropy(y_true, y_pred), axis=[0, 1, 2])
     #     return K.sum(class_loglosses * K.constant(class_weights))
 
-    # f1 = tfa.metrics.F1Score(num_classes=n_classes, average=None)
+    f1 = tfa.metrics.F1Score(num_classes=n_classes, average=None)
 
     # Configure the model for training.
     # We use the "sparse" version of categorical_crossentropy
@@ -258,25 +258,25 @@ def unet_model(
     # More about metrics https://keras.io/guides/training_with_built_in_methods/
 
 
-# def recall_m(y_true, y_pred):
-#     y_true = K.ones_like(y_true)
-#     true_positives = K.sum(K.round(K.clip(y_true * y_pred, 0, 1)))
-#     all_positives = K.sum(K.round(K.clip(y_true, 0, 1)))
+def recall_m(y_true, y_pred):
+    #y_true = K.ones_like(y_true)
+    true_positives = K.sum(K.round(K.clip(y_true * y_pred, 0, 1)))
+    all_positives = K.sum(K.round(K.clip(y_true, 0, 1)))
 
-#     recall = true_positives / (all_positives + K.epsilon())
-#     return recall
-
-
-# def precision_m(y_true, y_pred):
-#     y_true = K.ones_like(y_true)
-#     true_positives = K.sum(K.round(K.clip(y_true * y_pred, 0, 1)))
-
-#     predicted_positives = K.sum(K.round(K.clip(y_pred, 0, 1)))
-#     precision = true_positives / (predicted_positives + K.epsilon())
-#     return precision
+    recall = true_positives / (all_positives + K.epsilon())
+    return recall
 
 
-# def f1_score(y_true, y_pred):
-#     precision = precision_m(y_true, y_pred)
-#     recall = recall_m(y_true, y_pred)
-#     return 2 * ((precision * recall) / (precision + recall + K.epsilon()))
+def precision_m(y_true, y_pred):
+    #y_true = K.ones_like(y_true)
+    true_positives = K.sum(K.round(K.clip(y_true * y_pred, 0, 1)))
+
+    predicted_positives = K.sum(K.round(K.clip(y_pred, 0, 1)))
+    precision = true_positives / (predicted_positives + K.epsilon())
+    return precision
+
+
+def f1_score(y_true, y_pred):
+    precision = precision_m(y_true, y_pred)
+    recall = recall_m(y_true, y_pred)
+    return 2 * ((precision * recall) / (precision + recall + K.epsilon()))
