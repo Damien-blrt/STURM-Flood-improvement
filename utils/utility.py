@@ -13,7 +13,8 @@ def write_geotiff(filename, array, profile, transform, crs, dtype=rasterio.float
         dtype=dtype,
         count=array.shape[2] if array.ndim == 3 else 1,
         transform=transform,
-        crs=crs
+        crs=crs,
+        nodata=None
     )
 
     with rasterio.open(filename, 'w', **profile) as dst:

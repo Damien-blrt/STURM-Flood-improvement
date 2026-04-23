@@ -136,7 +136,7 @@ def unet_model(
     normalize_inputs=True,
     optimizer="adam",
     loss_function="categorical_crossentropy",
-    metrics=["f1_score"],
+    metrics=["categorical_accuracy"],
 ):
     inputs = Input((tile_width, tile_height, n_bands))
     x = inputs  # Initialize x to be the input tensor
@@ -280,3 +280,14 @@ def f1_score(y_true, y_pred):
     precision = precision_m(y_true, y_pred)
     recall = recall_m(y_true, y_pred)
     return 2 * ((precision * recall) / (precision + recall + K.epsilon()))
+
+
+def iou(y_true, y_pred):
+    y_true = K.round(K.clip(y_true, 0, 1))
+    y_pred = K.round(K.clip(y_pred, 0, 1))
+    
+    intersection = K.sum(y_true * y_pred)
+    union = K.sum(y_true) + K.sum(y_pred) - intersection
+    
+    iou = intersection / (union + K.epsilon())
+    return iou

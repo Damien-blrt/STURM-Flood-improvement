@@ -1,6 +1,7 @@
 # STURM-Flood Model Improvements
 
 This repository contains code for improving deep learning models for flood extent mapping using the STURM-Flood dataset.
+By Damien BALLERAT (2026)
 
 ## Overview
 
@@ -48,14 +49,14 @@ Reference paper:
 
 build the image:
 ```bash
-docker build -t [Name you want for image] .
+docker build -t [Name image] .
 ```
 run the container: 
 ```bash
 docker run --rm --gpus all -it \
 -p 8888:8888 \
 -v ~/[local path to repo]:/workspace \
-tf-gpu-jupyter \
+[Name image] \
 jupyter notebook --ip=0.0.0.0 --allow-root --no-browser
 ```
 

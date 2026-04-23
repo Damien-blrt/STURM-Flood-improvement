@@ -22,8 +22,8 @@ def run_inference(tile, dataset, model, composite_dirs, mask_dirs, output_dir, s
         reference_profile = src.profile.copy()
         reference_transform = src.transform
         reference_crs = src.crs
-
-    prediction_probs = model.predict(np.expand_dims(input_data, axis=0))[0]
+        
+    prediction_probs = model.predict(np.expand_dims(input_data, axis=0), verbose=0)[0]
     binary_prediction = (
         prediction_probs[:, :, 1] > score_threshold).astype(np.uint8)
 

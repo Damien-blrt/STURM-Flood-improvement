@@ -5,7 +5,9 @@ STURM-Flood
 inference_metrics.csv
 tile_visualizations
 logs
+save
 inference_results
 */__pycache__/*
 arch/__pycache__/*
 *.pyc
+tmp_preds
