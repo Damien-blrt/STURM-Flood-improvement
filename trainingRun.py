@@ -48,10 +48,10 @@ sent1_metadata = pd.read_csv(sent1_metadata_path)
 sent2_metadata = pd.read_csv(sent2_metadata_path)
 
 SEED = 1
-BATCH_SIZE = 8
+BATCH_SIZE = 16
 
-S1_SUBSET_SIZE = 5000
-S2_SUBSET_SIZE = 500
+S1_SUBSET_SIZE = len(sent1_metadata)
+S2_SUBSET_SIZE = len(sent2_metadata)
 
 s1_train_size = int(S1_SUBSET_SIZE * 0.8)
 s1_val_size   = int(S1_SUBSET_SIZE * 0.1)
@@ -95,20 +95,43 @@ def translate_image_and_mask(tile_id, comp_dir, msk_dir):
 
     return img, mask
 
-
-# convert the dataframe to a tf dataset using a generator (STOPS THE KILLED ERROR)
-def create_tf_dataset(df, comp_dir, msk_dir, batch_size):
+def create_tf_dataset(df, comp_dir, msk_dir, batch_size, cache_path=None):
     def generator():
-        for i, row in df.iterrows():
+        for _, row in df.iterrows():
             yield translate_image_and_mask(row['tile_id'], comp_dir, msk_dir)
-    
-    return tf.data.Dataset.from_generator(
-        generator, 
+
+    dataset = tf.data.Dataset.from_generator(
+        generator,
         output_signature=(
             tf.TensorSpec(shape=(128, 128, None), dtype=tf.float32),
             tf.TensorSpec(shape=(128, 128, 2), dtype=tf.float32)
         )
-    ).batch(batch_size).prefetch(tf.data.AUTOTUNE)
+    )
+
+    if cache_path:
+        dataset = dataset.cache(cache_path)  # disque
+    else:
+        dataset = dataset.cache()  # RAM (attention)
+
+    return dataset\
+        .shuffle(200)\
+        .batch(batch_size)\
+        .prefetch(tf.data.AUTOTUNE)
+
+
+# # convert the dataframe to a tf dataset using a generator (STOPS THE KILLED ERROR)
+# def create_tf_dataset(df, comp_dir, msk_dir, batch_size):
+#     def generator():
+#         for i, row in df.iterrows():
+#             yield translate_image_and_mask(row['tile_id'], comp_dir, msk_dir)
+    
+#     return tf.data.Dataset.from_generator(
+#         generator, 
+#         output_signature=(
+#             tf.TensorSpec(shape=(128, 128, None), dtype=tf.float32),
+#             tf.TensorSpec(shape=(128, 128, 2), dtype=tf.float32)
+#         )
+#     ).batch(batch_size).prefetch(tf.data.AUTOTUNE)
 
 # easier way to do it but it will crash if too much tile are loaded
 
@@ -126,10 +149,26 @@ def create_tf_dataset(df, comp_dir, msk_dir, batch_size):
 
 #     return tf.data.Dataset.from_tensor_slices((X, y)).batch(batch_size)
 
-train_dataset_sent1 = create_tf_dataset(sent1_train, sent1_dir, sent1_mask_dir, BATCH_SIZE)
-val_dataset_sent1 = create_tf_dataset(sent1_val, sent1_dir, sent1_mask_dir, BATCH_SIZE)
-train_dataset_sent2 = create_tf_dataset(sent2_train, sent2_dir, sent2_mask_dir, BATCH_SIZE)
-val_dataset_sent2 = create_tf_dataset(sent2_val, sent2_dir, sent2_mask_dir, BATCH_SIZE)
+
+train_dataset_sent1 = create_tf_dataset(
+    sent1_train, sent1_dir, sent1_mask_dir, BATCH_SIZE,
+    cache_path="./cache_s1"
+)
+
+val_dataset_sent1 = create_tf_dataset(
+    sent1_val, sent1_dir, sent1_mask_dir, BATCH_SIZE,
+    cache_path="./cache_s1_val"
+)
+
+train_dataset_sent2 = create_tf_dataset(
+    sent2_train, sent2_dir, sent2_mask_dir, BATCH_SIZE,
+    cache_path="./cache_s2"
+)
+
+val_dataset_sent2 = create_tf_dataset(
+    sent2_val, sent2_dir, sent2_mask_dir, BATCH_SIZE,
+    cache_path="./cache_s2_val"
+)
 test_dataset_sent1 = create_tf_dataset(sent1_test, sent1_dir, sent1_mask_dir, BATCH_SIZE)
 test_dataset_sent2 = create_tf_dataset(sent2_test, sent2_dir, sent2_mask_dir, BATCH_SIZE)
 
@@ -266,7 +305,7 @@ model_sent1 = unet_model(tile_width=128,
                          n_blocks=6,
                          metrics=custom_metrics,
                          class_weight_list=weights_s1,
-                         loss_function="focal_dice",
+                         loss_function="categorical_focal_crossentropy",
                          # optimizer=opt #not necessary
                          )
 
@@ -277,10 +316,10 @@ model_sent2 = unet_model(tile_width=128,
                         tile_height=128,
                         n_bands=9,
                         n_classes=2,
-                        n_blocks=5,
+                        n_blocks=6,
                         metrics=custom_metrics,
                         class_weight_list=weights_s2,
-                        loss_function="focal_dice",
+                        loss_function="categorical_focal_crossentropy",
                         )
 #weight_path_sent2 = os.path.join(s2_model_dir, 'unet/1/model_weights.hdf5')
 #model_sent2.load_weights(weight_path_sent2)
@@ -291,13 +330,13 @@ model_sent2 = unet_model(tile_width=128,
 
 # Callbacks S1
 # could stop before the best model for sent-1
-# early_stop_s1 = tf.keras.callbacks.EarlyStopping(
-#     monitor='val_weighted_f1',
-#     mode='max',
-#     patience=5,
-#     restore_best_weights=True,
-#     verbose=1
-# )
+early_stop_s1 = tf.keras.callbacks.EarlyStopping(
+    monitor='val_weighted_f1',
+    mode='max',
+    patience=12,
+    restore_best_weights=True,
+    verbose=1
+)
 checkpoint_s1 = tf.keras.callbacks.ModelCheckpoint(
     filepath=f"{s1_save_dir}/best_model.keras",
     monitor='val_weighted_f1',
@@ -314,13 +353,13 @@ tensorboard_callback_sent1 = tf.keras.callbacks.TensorBoard(
 
 # Callbacks S2
 # could stop before the best model for sent-2
-# early_stop_s2 = tf.keras.callbacks.EarlyStopping(
-#     monitor='val_weighted_f1',
-#     mode='max',
-#     patience=3,
-#     restore_best_weights=True,
-#     verbose=1
-# )
+early_stop_s2 = tf.keras.callbacks.EarlyStopping(
+    monitor='val_weighted_f1',
+    mode='max',
+    patience=12,
+    restore_best_weights=True,
+    verbose=1
+)
 checkpoint_s2 = tf.keras.callbacks.ModelCheckpoint(
     filepath=f"{s2_save_dir}/best_model.keras",
     monitor='val_weighted_f1',
@@ -340,8 +379,8 @@ print("\n--- Starting training on Sentinel-1 subset ---")
 history_sent1 = model_sent1.fit(
     train_dataset_sent1,
     validation_data=val_dataset_sent1,
-    epochs=1,
-    callbacks=[tensorboard_callback_sent1, checkpoint_s1],
+    epochs=40,
+    callbacks=[tensorboard_callback_sent1, checkpoint_s1, early_stop_s1],
     verbose=2
 )
 
@@ -359,8 +398,8 @@ print("\n--- Starting training on Sentinel-2 subset ---")
 history_sent2 = model_sent2.fit(
     train_dataset_sent2,
     validation_data=val_dataset_sent2,
-    epochs=30,
-    callbacks=[tensorboard_callback_sent2, checkpoint_s2],
+    epochs=40,
+    callbacks=[tensorboard_callback_sent2, checkpoint_s2, early_stop_s2],
     verbose=2
 )
 print(f"\nTraining completed. TensorBoard logs are saved in: {logs_dir}/sent2")
@@ -443,3 +482,5 @@ model_sent1.load_weights(f"{s1_save_dir}/best_model.keras")
 model_sent2.load_weights(f"{s2_save_dir}/best_model.keras")
 metrics_s1 = evaluate_model(sent1_test, 'Sentinel-1', model_sent1, is_s2=False, max_viz=10)
 metrics_s2 = evaluate_model(sent2_test, 'Sentinel-2', model_sent2, is_s2=True,  max_viz=10)
+
+os.system('rm cache*')
