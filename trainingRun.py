@@ -17,7 +17,8 @@ from model import unet_model
 # Folders creation
 # ---------------------------------------------------------
 
-os.system('rm -rf ./logs/*')
+os.system('rm -rf ./logs/sent1/*')
+os.system('rm -rf ./logs/sent2/*')
 
 run_id = datetime.now().strftime("%Y%m%d_%H%M%S")
 s1_save_dir = f"./save/runs/{run_id}/sentinel1"
@@ -48,9 +49,9 @@ sent1_metadata = pd.read_csv(sent1_metadata_path)
 sent2_metadata = pd.read_csv(sent2_metadata_path)
 
 SEED = 1
-BATCH_SIZE = 16
+BATCH_SIZE = 8
 
-S1_SUBSET_SIZE = len(sent1_metadata)
+S1_SUBSET_SIZE = 5000 #len(sent1_metadata)
 S2_SUBSET_SIZE = len(sent2_metadata)
 
 s1_train_size = int(S1_SUBSET_SIZE * 0.8)
@@ -79,7 +80,6 @@ print(f"Sentinel-2: {len(sent2_train)} train, {len(sent2_val)} val, {len(sent2_t
 # Data loading and preprocessing
 # ---------------------------------------------------------
 
-# Load both S1 (2 bands) and S2 (9 bands) and concatenate to 11 bands
 def translate_image_and_mask(tile_id, comp_dir, msk_dir):
     src = rasterio.open(os.path.join(comp_dir, tile_id))
     img = src.read().transpose(1, 2, 0).astype(np.float32)
@@ -302,7 +302,7 @@ model_sent1 = unet_model(tile_width=128,
                          tile_height=128, 
                          n_bands=2, 
                          n_classes=2, 
-                         n_blocks=6,
+                         n_blocks=5,
                          metrics=custom_metrics,
                          class_weight_list=weights_s1,
                          loss_function="categorical_focal_crossentropy",
@@ -316,7 +316,7 @@ model_sent2 = unet_model(tile_width=128,
                         tile_height=128,
                         n_bands=9,
                         n_classes=2,
-                        n_blocks=6,
+                        n_blocks=5,
                         metrics=custom_metrics,
                         class_weight_list=weights_s2,
                         loss_function="categorical_focal_crossentropy",
@@ -379,8 +379,8 @@ print("\n--- Starting training on Sentinel-1 subset ---")
 history_sent1 = model_sent1.fit(
     train_dataset_sent1,
     validation_data=val_dataset_sent1,
-    epochs=40,
-    callbacks=[tensorboard_callback_sent1, checkpoint_s1, early_stop_s1],
+    epochs=40, #never put 0 put 1 instead if you want to skip
+    callbacks=[tensorboard_callback_sent1, checkpoint_s1],
     verbose=2
 )
 
@@ -398,8 +398,8 @@ print("\n--- Starting training on Sentinel-2 subset ---")
 history_sent2 = model_sent2.fit(
     train_dataset_sent2,
     validation_data=val_dataset_sent2,
-    epochs=40,
-    callbacks=[tensorboard_callback_sent2, checkpoint_s2, early_stop_s2],
+    epochs=40, #never put 0 put 1 instead if you want to skip
+    callbacks=[tensorboard_callback_sent2, checkpoint_s2],
     verbose=2
 )
 print(f"\nTraining completed. TensorBoard logs are saved in: {logs_dir}/sent2")
