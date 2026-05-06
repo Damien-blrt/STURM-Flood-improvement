@@ -8,17 +8,23 @@ import matplotlib.pyplot as plt
 from tensorflow.keras.utils import to_categorical
 import tensorflow_addons as tfa
 import sys
-
+from utils.utility import preprocess_mask, write_geotiff
+from utils.inference_metrics import run_inference
+from utils.visualization import visualize_tile, save_visualizations
+from sklearn.metrics import f1_score, precision_score, recall_score, jaccard_score
 
 sys.path.append('./arch')
+sys.path.append('./utils')
 from model import unet_model
 
 # ---------------------------------------------------------
 # Folders creation
 # ---------------------------------------------------------
 
-os.system('rm -rf ./logs/sent1/*')
-os.system('rm -rf ./logs/sent2/*')
+os.system('rm -rf logs')
+
+#os.system('rm -rf ./logs/sent1/*')
+#os.system('rm -rf ./logs/sent2/*')
 
 run_id = datetime.now().strftime("%Y%m%d_%H%M%S")
 s1_save_dir = f"./save/runs/{run_id}/sentinel1"
@@ -48,7 +54,7 @@ os.makedirs(sent2_log_dir, exist_ok=True)
 sent1_metadata = pd.read_csv(sent1_metadata_path)
 sent2_metadata = pd.read_csv(sent2_metadata_path)
 
-SEED = 1
+SEED = 42
 BATCH_SIZE = 8
 
 S1_SUBSET_SIZE = 5000 #len(sent1_metadata)
@@ -197,33 +203,50 @@ test_dataset_sent2 = create_tf_dataset(sent2_test, sent2_dir, sent2_mask_dir, BA
 #     fn = tf.reduce_sum(y_true * (1 - y_pred))
 
 #     return 2*tp / (2*tp + fp + fn + 1e-7)
-threshold = 0.5
+init_threshold = 0.5
 
 def get_binary_masks(y_true, y_pred):
     y_true = y_true[..., 1]
-    y_pred = tf.cast(y_pred[..., 1] > threshold, tf.float32)
+    y_pred = tf.cast(y_pred[..., 1] > init_threshold, tf.float32)
     return y_true, y_pred
 
 
 
 def iou(y_true, y_pred):
     y_true = tf.argmax(y_true, axis=-1)
-    y_pred = tf.argmax(y_pred, axis=-1)
-    ious = []
-    for cls in [0, 1]:
-        y_true_c = tf.cast(y_true == cls, tf.float32)
-        y_pred_c = tf.cast(y_pred == cls, tf.float32)
-        tp = tf.reduce_sum(y_true_c * y_pred_c)
-        fp = tf.reduce_sum((1 - y_true_c) * y_pred_c)
-        fn = tf.reduce_sum(y_true_c * (1 - y_pred_c))
-        iou = tp / (tp + fp + fn + 1e-7)
-        ious.append(iou)
+    y_pred = tf.cast(y_pred[..., 1] > init_threshold, tf.int32)
 
-    return tf.reduce_mean(tf.stack(ious))
+    y_true = tf.cast(y_true, tf.float32)
+    y_pred = tf.cast(y_pred, tf.float32)
+
+    tp = tf.reduce_sum(y_true * y_pred)
+    fp = tf.reduce_sum((1 - y_true) * y_pred)
+    fn = tf.reduce_sum(y_true * (1 - y_pred))
+
+    return tp / (tp + fp + fn + 1e-7)
 
 
-def dice(y_true, y_pred):
-    y_true, y_pred = get_binary_masks(y_true, y_pred)
+
+
+def dice_water(y_true, y_pred):
+    y_true = tf.argmax(y_true, axis=-1)
+    y_pred = tf.cast(y_pred[..., 1] > init_threshold, tf.float32)
+
+    y_true = tf.cast(y_true == 1, tf.float32)
+    y_pred = tf.cast(y_pred == 1, tf.float32)
+
+    tp = tf.reduce_sum(y_true * y_pred)
+    fp = tf.reduce_sum((1 - y_true) * y_pred)
+    fn = tf.reduce_sum(y_true * (1 - y_pred))
+
+    return 2 * tp / (2 * tp + fp + fn + 1e-7)
+
+def dice_non_water(y_true, y_pred):
+    y_true = tf.argmax(y_true, axis=-1)
+    y_pred = tf.cast(y_pred[..., 1] > init_threshold, tf.float32)
+
+    y_true = tf.cast(y_true == 0, tf.float32)
+    y_pred = tf.cast(y_pred == 0, tf.float32)
 
     tp = tf.reduce_sum(y_true * y_pred)
     fp = tf.reduce_sum((1 - y_true) * y_pred)
@@ -233,7 +256,7 @@ def dice(y_true, y_pred):
 
 def weighted_f1(y_true, y_pred):
     y_true = tf.argmax(y_true, axis=-1)
-    y_pred = tf.argmax(y_pred, axis=-1)
+    y_pred = tf.cast(y_pred[..., 1] > init_threshold, tf.int32)
 
     f1_scores = []
     supports = []
@@ -250,7 +273,6 @@ def weighted_f1(y_true, y_pred):
         recall = tp / (tp + fn + 1e-7)
 
         f1_c = 2 * precision * recall / (precision + recall + 1e-7)
-
         support = tf.reduce_sum(y_true_c)
 
         f1_scores.append(f1_c)
@@ -267,34 +289,37 @@ def weighted_f1(y_true, y_pred):
 
 custom_metrics = [
     "categorical_accuracy",
-    weighted_f1, iou, dice
+    weighted_f1, iou, dice_water, dice_non_water
 ]
 
-def compute_class_weights(df, msk_dir):
-    total = 0
-    counts = np.zeros(2)
+#weights are unsused for categorical focal loss
 
-    for i, row in df.iterrows():
-        src = rasterio.open(os.path.join(msk_dir, row['tile_id']))
-        mask = src.read(1)
-        src.close()
+# def compute_class_weights(df, msk_dir):
+#     total = 0
+#     counts = np.zeros(2)
 
-        for cls in [0, 1]:
-            counts[cls] += np.sum(mask == cls)
+#     for i, row in df.iterrows():
+#         src = rasterio.open(os.path.join(msk_dir, row['tile_id']))
+#         mask = src.read(1)
+#         src.close()
 
-        total += mask.size
+#         for cls in [0, 1]:
+#             counts[cls] += np.sum(mask == cls)
 
-    weights = total / (2 * counts)
-    weights = weights / np.min(weights)  # normalize
-    weights[1] = weights[1]
+#         total += mask.size
 
-    return weights
+#     weights = total / (2 * counts)
+#     weights = weights / np.min(weights)  # normalize
+#     weights[1] = weights[1]
 
-weights_s1 = compute_class_weights(sent1_train, sent1_mask_dir)
-print("Weights S1:", weights_s1) #debug print
-weights_s2 = compute_class_weights(sent2_train, sent2_mask_dir)
-print("Weights S2:", weights_s2) #debug print
+#     return weights
 
+# weights_s1 = compute_class_weights(sent1_train, sent1_mask_dir)
+# print("Weights S1:", weights_s1) #debug print
+# weights_s2 = compute_class_weights(sent2_train, sent2_mask_dir)
+# print("Weights S2:", weights_s2) #debug print
+weights_s1 = [1.0, 1.0]
+weights_s2 = [1.0, 1.0]
 
 # opt = tf.keras.optimizers.Adam(learning_rate=1e-4) # lower learning rate for better convergence with the focal loss, but it will take more time to train
 
@@ -305,7 +330,7 @@ model_sent1 = unet_model(tile_width=128,
                          n_blocks=5,
                          metrics=custom_metrics,
                          class_weight_list=weights_s1,
-                         loss_function="categorical_focal_crossentropy",
+                         loss_function="categorical_focal_crossentropy", # loss_function="focal_tversky""
                          # optimizer=opt #not necessary
                          )
 
@@ -319,7 +344,7 @@ model_sent2 = unet_model(tile_width=128,
                         n_blocks=5,
                         metrics=custom_metrics,
                         class_weight_list=weights_s2,
-                        loss_function="categorical_focal_crossentropy",
+                        loss_function="categorical_focal_crossentropy", # loss_function="focal_tversky""
                         )
 #weight_path_sent2 = os.path.join(s2_model_dir, 'unet/1/model_weights.hdf5')
 #model_sent2.load_weights(weight_path_sent2)
@@ -379,7 +404,7 @@ print("\n--- Starting training on Sentinel-1 subset ---")
 history_sent1 = model_sent1.fit(
     train_dataset_sent1,
     validation_data=val_dataset_sent1,
-    epochs=40, #never put 0 put 1 instead if you want to skip
+    epochs=1, #never put 0 put 1 instead if you want to skip
     callbacks=[tensorboard_callback_sent1, checkpoint_s1],
     verbose=2
 )
@@ -400,7 +425,9 @@ history_sent2 = model_sent2.fit(
     validation_data=val_dataset_sent2,
     epochs=40, #never put 0 put 1 instead if you want to skip
     callbacks=[tensorboard_callback_sent2, checkpoint_s2],
-    verbose=2
+    verbose=2,
+    
+
 )
 print(f"\nTraining completed. TensorBoard logs are saved in: {logs_dir}/sent2")
 
@@ -409,12 +436,7 @@ print(f"\nTraining completed. TensorBoard logs are saved in: {logs_dir}/sent2")
 # Evaluation and visualization after training
 # ---------------------------------------------------------
 
-import sys
-sys.path.append('./utils')
-from utils.utility import preprocess_mask, write_geotiff
-from utils.inference_metrics import run_inference
-from utils.visualization import visualize_tile, save_visualizations
-from sklearn.metrics import f1_score, precision_score, recall_score, jaccard_score
+
 
 output_dir = f"./save/runs/{run_id}/predictions"
 visualization_dir = f"./save/runs/{run_id}/visualizations"
@@ -430,57 +452,64 @@ mask_dirs = {
     'Sentinel-2': sent2_mask_dir
 }
 
-def evaluate_model(val_df, dataset, model, is_s2=False, max_viz=5, max_eval=100):
+def evaluate_model(val_df, dataset, model, is_s2=False, max_viz=5, max_eval=100, threshold=[0.5,0.4,0.3]):
     print(f"\n--- Evaluating {dataset} on {max_eval} tiles ---")
-    all_metrics = []
-    viz_count = 0
 
-    for i, (_, row) in enumerate(val_df.head(max_eval).iterrows()):
-        tile_id = row['tile_id']
-        metrics = run_inference(tile_id, dataset, model, composite_dirs, mask_dirs, output_dir, with_gt=True)
-        if metrics:
-            all_metrics.append(metrics)
+    results = []
+    for t in threshold: 
+        viz_count = 0
+        all_metrics = []
 
-        if viz_count < max_viz:
-            fig = visualize_tile(tile_id, dataset, composite_dirs, output_dir, mask_dirs, is_s2=is_s2, with_gt=True)
-            fig.savefig(f"{visualization_dir}/{dataset}_{tile_id.split('.')[0]}.png", dpi=100, bbox_inches='tight')
-            plt.close(fig)
-            viz_count += 1
+        for i, (_, row) in enumerate(val_df.head(max_eval).iterrows()):
+            tile_id = row['tile_id']
+            metrics = run_inference(tile_id, dataset, model, composite_dirs, mask_dirs, output_dir, score_threshold=t, with_gt=True)
+            if metrics:
+                all_metrics.append(metrics)
 
-    df = pd.DataFrame(all_metrics)
-    tp = df['TP'].sum()
-    fp = df['FP'].sum()
-    fn = df['FN'].sum()
-    tn = df['TN'].sum()
-    total = tp + fp + fn + tn
+            if viz_count < max_viz:
+                fig = visualize_tile(tile_id, dataset, composite_dirs, output_dir, mask_dirs, is_s2=is_s2, with_gt=True)
+                fig.savefig(f"{visualization_dir}/{dataset}_{tile_id.split('.')[0]}.png", dpi=100, bbox_inches='tight')
+                plt.close(fig)
+                viz_count += 1
 
-    precision   = tp / (tp + fp + 1e-7)
-    recall      = tp / (tp + fn + 1e-7)
-    f1_eau      = 2 * precision * recall / (precision + recall + 1e-7)
-    iou         = tp / (tp + fp + fn + 1e-7)
-    accuracy    = (tp + tn) / total
+        df = pd.DataFrame(all_metrics)
+        tp = df['TP'].sum()
+        fp = df['FP'].sum()
+        fn = df['FN'].sum()
+        tn = df['TN'].sum()
+        total = tp + fp + fn + tn
 
-    support_eau     = tp + fn
-    support_non_eau = tn + fp
-    p0 = tn / (tn + fn + 1e-7)
-    r0 = tn / (tn + fp + 1e-7)
-    f1_non_eau  = 2 * p0 * r0 / (p0 + r0 + 1e-7)
-    weighted_f1 = (f1_eau * support_eau + f1_non_eau * support_non_eau) / total
+        precision   = tp / (tp + fp + 1e-7)
+        recall      = tp / (tp + fn + 1e-7)
+        f1_eau      = 2 * precision * recall / (precision + recall + 1e-7)
+        iou         = tp / (tp + fp + fn + 1e-7)
+        accuracy    = (tp + tn) / total
 
-    mean_metrics = {
-        'Accuracy': accuracy, 'Weighted F1': weighted_f1,
-        'F1 eau': f1_eau, 'Precision': precision,
-        'Recall': recall, 'IoU': iou
-    }
+        support_eau     = tp + fn
+        support_non_eau = tn + fp
+        p0 = tn / (tn + fn + 1e-7)
+        r0 = tn / (tn + fp + 1e-7)
+        f1_non_eau  = 2 * p0 * r0 / (p0 + r0 + 1e-7)
+        weighted_f1 = (f1_eau * support_eau + f1_non_eau * support_non_eau) / total
 
-    print(f"\n{dataset} — Métriques globales pixel-wise:")
-    for k, v in mean_metrics.items():
-        print(f"  {k}: {v:.4f}")
-    return mean_metrics
+        mean_metrics = {
+            'Accuracy': accuracy, 'Weighted F1': weighted_f1,
+            'Dice Water': f1_eau, 'Dice Non-Water': f1_non_eau, 'Precision': precision,
+            'Recall': recall, 'IoU': iou, '===threshold====': t
+        }
+
+        print(f"\n{dataset} — Métriques globales pixel-wise:")
+        for k, v in mean_metrics.items():
+            print(f"  {k}: {v:.4f}")
+        results.append(mean_metrics)
+    best = max(results, key=lambda x: x['Weighted F1'])
+    print("\nBest threshold:", best['===threshold===='])
+    return results
 
 model_sent1.load_weights(f"{s1_save_dir}/best_model.keras")
 model_sent2.load_weights(f"{s2_save_dir}/best_model.keras")
-metrics_s1 = evaluate_model(sent1_test, 'Sentinel-1', model_sent1, is_s2=False, max_viz=10)
-metrics_s2 = evaluate_model(sent2_test, 'Sentinel-2', model_sent2, is_s2=True,  max_viz=10)
+thresholds = [0.55, 0.5, 0.45, 0.4]
+metrics_s1 = evaluate_model(sent1_test, 'Sentinel-1', model_sent1, is_s2=False, max_viz=10, threshold=thresholds)
+metrics_s2 = evaluate_model(sent2_test, 'Sentinel-2', model_sent2, is_s2=True,  max_viz=10, threshold=thresholds)
 
 os.system('rm cache*')

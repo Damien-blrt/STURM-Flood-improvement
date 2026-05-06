@@ -20,6 +20,23 @@ class TverskyLoss(tf.keras.losses.Loss):
         false_negatives = tf.reduce_sum(y_true * (1 - y_pred), axis=axis_to_reduce)
         tversky = (true_positives + self.smooth) / (true_positives + self.alpha * false_positives + self.beta * false_negatives + self.smooth) # epsilon
         return 1 - tversky
+
+class FocalTverskyLoss(tf.keras.losses.Loss):
+    def __init__(self, gamma=2.0, alpha=0.5, beta=0.5, smooth=1e-3, name='focal_tversky_loss'):
+        super(FocalTverskyLoss, self).__init__(name=name)
+        self.gamma = gamma
+        self.alpha = alpha
+        self.beta = beta
+        self.smooth = smooth
+
+    def call(self, y_true, y_pred):
+        axis_to_reduce = range(1, K.ndim(y_pred))
+        true_positives = tf.reduce_sum(y_true * y_pred, axis=axis_to_reduce)
+        false_positives = tf.reduce_sum((1 - y_true) * y_pred, axis=axis_to_reduce)
+        false_negatives = tf.reduce_sum(y_true * (1 - y_pred), axis=axis_to_reduce)
+        tversky = (true_positives + self.smooth) / (true_positives + self.alpha * false_positives + self.beta * false_negatives + self.smooth)
+        focal_tversky = tf.pow(1 - tversky, self.gamma)
+        return focal_tversky
 # # Sørensen–Dice coefficient - F1-score based loss
 # def dice_loss(y_true, y_pred):
 #     smooth = 0.5
@@ -89,12 +106,14 @@ class CategoricalFocalCrossentropy(tf.keras.losses.Loss):
         # Reduce the focal loss along the class dimension
         focal_loss = tf.reduce_sum(focal_loss, axis=-1)
         return focal_loss
-    
+
+
 cfce = CategoricalFocalCrossentropy(alpha=0.25)
 # region-based
 tversky_loss = TverskyLoss()
 dice_loss = TverskyLoss(alpha=0.5, beta=0.5)
 jaccard_loss = TverskyLoss(alpha=1, beta=1)
+focal_tversky_loss = FocalTverskyLoss(alpha=0.5, beta=0.5, gamma=2.0)
 
 # Compound losses
 def cce_dice_loss(y_true, y_pred):

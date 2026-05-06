@@ -208,7 +208,7 @@ def unet_model(
 
     weighted_dice_loss = WeightedDiceLoss(class_weights)
     weighted_jaccard_loss = WeightedJaccardLoss(class_weights)
-
+    focal_tversky_loss = FocalTverskyLoss()
     alpha = class_weight_list
     # Initialize loss function with computed alpha
     weighted_cfce = CategoricalFocalCrossentropy(alpha=alpha)
@@ -225,6 +225,7 @@ def unet_model(
         "weighted_jaccard_loss": weighted_jaccard_loss,
         "cce_jaccard": cce_jaccard_loss,
         "focal_jaccard": cfce_jaccard_loss,
+        "focal_tversky": focal_tversky_loss
     }
 
     loss = losses_dict.get(loss_function, f"{loss_function}")

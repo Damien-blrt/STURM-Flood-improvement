@@ -39,6 +39,8 @@ s2_model = rebuild_model({
     'weights_path': './unet/sentinel2_model/unet/1/model_weights.hdf5'
 })
 
+threshold = [0.5,0.45,0.4] 
+
 # ---------------------------------------------------------
 # Data paths and test sample selection
 # ---------------------------------------------------------
@@ -58,7 +60,7 @@ s1_metadata = pd.read_csv('./STURM-Flood/Dataset/Sentinel1_metadata.csv')
 s2_metadata = pd.read_csv('./STURM-Flood/Dataset/Sentinel2_metadata.csv')
 
 s1_test_df = s1_metadata.sample(n=500, random_state=42)
-s2_test_df = s2_metadata.sample(n=200, random_state=42)
+s2_test_df = s2_metadata.sample(n=int(len(s2_metadata)*0.1), random_state=42)
 
 # ---------------------------------------------------------
 # Run inference and calculate metrics for test samples
@@ -71,46 +73,43 @@ for dataset, df, model in zip(
     [s1_test_df, s2_test_df],
     [s1_model, s2_model]
 ):
-    for _, row in tqdm(df.iterrows(), total=len(df), desc=f"Processing {dataset}"):
-        metrics = run_inference(row['tile_id'], dataset, model, composite_dirs, mask_dirs, output_dir, with_gt=True)
-        if metrics:
-            metrics['Dataset'] = dataset
-            results.append(metrics)
+    for t in threshold:
+        for _, row in tqdm(df.iterrows(), total=len(df), desc=f"Processing {dataset}"):
+            metrics = run_inference(row['tile_id'], dataset, model, composite_dirs, mask_dirs, output_dir, with_gt=True, score_threshold=t)
+            if metrics:
+                metrics['Dataset'] = dataset
+                metrics['Threshold'] = t 
+                results.append(metrics)
 
-# ---------------------------------------------------------
-#  Aggregate and display results
-# ---------------------------------------------------------
 
 results_df = pd.DataFrame(results)
 
-print("\n=== GLOBAL PIXEL-WISE METRICS (comme le papier) ===")
+print("\n=== GLOBAL PIXEL-WISE METRICS ===")
 for dataset in ['Sentinel-1', 'Sentinel-2']:
-    df = results_df[results_df['Dataset'] == dataset]
-    tp = df['TP'].sum()
-    fp = df['FP'].sum()
-    fn = df['FN'].sum()
-    tn = df['TN'].sum()
-    total = tp + fp + fn + tn
+    for t in threshold:
+        df_sub = results_df[(results_df['Dataset'] == dataset) & (results_df['Threshold'] == t)]
+        tp = df_sub['TP'].sum()
+        fp = df_sub['FP'].sum()
+        fn = df_sub['FN'].sum()
+        tn = df_sub['TN'].sum()
+        total = tp + fp + fn + tn
 
-    
-    precision = tp / (tp + fp + 1e-7)
-    recall    = tp / (tp + fn + 1e-7)
-    f1_eau    = 2 * precision * recall / (precision + recall + 1e-7)
-    iou       = tp / (tp + fp + fn + 1e-7)
-    accuracy  = (tp + tn) / total
+        precision    = tp / (tp + fp + 1e-7)
+        recall       = tp / (tp + fn + 1e-7)
+        f1_water     = 2 * precision * recall / (precision + recall + 1e-7)
+        f1_non_water = 2 * (tn / (tn + fn + 1e-7)) * (tn / (tn + fp + 1e-7)) / \
+                       ((tn / (tn + fn + 1e-7)) + (tn / (tn + fp + 1e-7)) + 1e-7)
+        weighted_f1  = (f1_water * (tp + fn) + f1_non_water * (tn + fp)) / total
+        iou          = tp / (tp + fp + fn + 1e-7)
+        accuracy     = (tp + tn) / total
 
+        print(f"\n{dataset} results {t}:")
+        print(f"  Accuracy      : {accuracy:.4f}")
+        print(f"  F1 Water      : {f1_water:.4f}")
+        print(f"  F1 Non-Water  : {f1_non_water:.4f}")
+        print(f"  Weighted F1   : {weighted_f1:.4f}")
+        print(f"  Precision     : {precision:.4f}")
+        print(f"  Recall        : {recall:.4f}")
+        print(f"  IoU           : {iou:.4f}")
 
-    support_eau     = tp + fn
-    support_non_eau = tn + fp
-    p0 = tn / (tn + fn + 1e-7)
-    r0 = tn / (tn + fp + 1e-7)
-    f1_non_eau  = 2 * p0 * r0 / (p0 + r0 + 1e-7)
-    weighted_f1 = (f1_eau * support_eau + f1_non_eau * support_non_eau) / total
-
-    print(f"\n{dataset}:")
-    print(f"  Accuracy     : {accuracy:.4f}")
-    print(f"  Weighted F1  : {weighted_f1:.4f}")
-    print(f"  F1 eau       : {f1_eau:.4f}")
-    print(f"  Precision    : {precision:.4f}")
-    print(f"  Recall       : {recall:.4f}")
-    print(f"  IoU          : {iou:.4f}")
+os.system(f"rm -rf {output_dir}")  # cleanup once, at the very end

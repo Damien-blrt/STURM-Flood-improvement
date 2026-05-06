@@ -7,8 +7,9 @@ import sys
 # ---------------------------------------------------------
 # Paths
 # ---------------------------------------------------------
-run_id = "20260423_024942"
+run_id = "20260506_070009" # Update this to match your actual run ID
 base_dir = "./STURM-Flood/Dataset"
+threshold = [0.5, 0.05] 
 
 s1_model_path = f"./save/runs/{run_id}/sentinel1/best_model.keras"
 s2_model_path = f"./save/runs/{run_id}/sentinel2/best_model.keras"
@@ -32,7 +33,7 @@ sent2_metadata = pd.read_csv(os.path.join(base_dir, "Sentinel2_metadata.csv"))
 
 SEED = 1
 S1_SUBSET_SIZE = 5000
-S2_SUBSET_SIZE = 500
+S2_SUBSET_SIZE = len(sent2_metadata)
 
 sent1_subset = sent1_metadata.sample(n=S1_SUBSET_SIZE, random_state=SEED).reset_index(drop=True)
 sent2_subset = sent2_metadata.sample(n=S2_SUBSET_SIZE, random_state=SEED).reset_index(drop=True)
@@ -72,56 +73,63 @@ mask_dirs = {
 # ---------------------------------------------------------
 # Evaluation
 # ---------------------------------------------------------
-def evaluate_model(val_df, dataset, model, max_eval=50):
+def evaluate_model(val_df, dataset, model, max_eval=200):
     print(f"\n--- Evaluating {dataset} on {max_eval} tiles ---")
+    results = []
+    for t in threshold: 
+        all_metrics = []
 
-    all_metrics = []
+        for _, row in val_df.head(max_eval).iterrows():
+            tile_id = row['tile_id']
 
-    for _, row in val_df.head(max_eval).iterrows():
-        tile_id = row['tile_id']
+            metrics = run_inference(
+                tile_id,
+                dataset,
+                model,
+                composite_dirs,
+                mask_dirs,
+                output_dir=temp_output_dir,
+                with_gt=True,
+                score_threshold=t
+            )
 
-        metrics = run_inference(
-            tile_id,
-            dataset,
-            model,
-            composite_dirs,
-            mask_dirs,
-            output_dir=temp_output_dir,
-            with_gt=True
-        )
+            if metrics:
+                all_metrics.append(metrics)
 
-        if metrics:
-            all_metrics.append(metrics)
+        df = pd.DataFrame(all_metrics)
 
-    df = pd.DataFrame(all_metrics)
+        tp = df['TP'].sum()
+        fp = df['FP'].sum()
+        fn = df['FN'].sum()
+        tn = df['TN'].sum()
+        total = tp + fp + fn + tn
 
-    tp = df['TP'].sum()
-    fp = df['FP'].sum()
-    fn = df['FN'].sum()
-    tn = df['TN'].sum()
-    total = tp + fp + fn + tn
+        precision = tp / (tp + fp + 1e-7)
+        recall    = tp / (tp + fn + 1e-7)
+        f1_water        = 2 * precision * recall / (precision + recall + 1e-7)
+        f1_non_water    = 2 * (tn / (tn + fn + 1e-7)) * (tn / (tn + fp + 1e-7)) / ((tn / (tn + fn + 1e-7)) + (tn / (tn + fp + 1e-7)) + 1e-7)
+        weighted_f1     = (f1_water * (tp + fn) + f1_non_water * (tn + fp)) / total
+        iou       = tp / (tp + fp + fn + 1e-7)
+        accuracy  = (tp + tn) / total
 
-    precision = tp / (tp + fp + 1e-7)
-    recall    = tp / (tp + fn + 1e-7)
-    f1        = 2 * precision * recall / (precision + recall + 1e-7)
-    iou       = tp / (tp + fp + fn + 1e-7)
-    accuracy  = (tp + tn) / total
+        print(f"\n{dataset} results {t}:")
+        print(f"  Accuracy : {accuracy:.4f}")
+        print(f"  F1 Water      : {f1_water:.4f}")
+        print(f"  F1 Non-Water  : {f1_non_water:.4f}")
+        print(f"  Weighted F1   : {weighted_f1:.4f}")
+        print(f"  Precision: {precision:.4f}")
+        print(f"  Recall   : {recall:.4f}")
+        print(f"  IoU      : {iou:.4f}")
 
-    print(f"\n{dataset} results:")
-    print(f"  Accuracy : {accuracy:.4f}")
-    print(f"  F1       : {f1:.4f}")
-    print(f"  Precision: {precision:.4f}")
-    print(f"  Recall   : {recall:.4f}")
-    print(f"  IoU      : {iou:.4f}")
 
 # ---------------------------------------------------------
 # Run
 # ---------------------------------------------------------
-evaluate_model(sent1_test, 'Sentinel-1', model_s1, max_eval=50)
-evaluate_model(sent2_test, 'Sentinel-2', model_s2, max_eval=50)
+evaluate_model(sent1_test, 'Sentinel-1', model_s1)
+evaluate_model(sent2_test, 'Sentinel-2', model_s2)
 
 # ---------------------------------------------------------
 # Optional cleanup
 # ---------------------------------------------------------
-shutil.rmtree(temp_output_dir)
+os.system(f'rm -rf {temp_output_dir}')
 print("\nTemporary files cleaned.")
