@@ -7,9 +7,9 @@ import sys
 # ---------------------------------------------------------
 # Paths
 # ---------------------------------------------------------
-run_id = "20260506_070009" # Update this to match your actual run ID
+run_id = "20260507_031410" # Update this to match your actual run ID
 base_dir = "./STURM-Flood/Dataset"
-threshold = [0.5, 0.05] 
+threshold = [0.525, 0.7, 0.3, 0.5] 
 
 s1_model_path = f"./save/runs/{run_id}/sentinel1/best_model.keras"
 s2_model_path = f"./save/runs/{run_id}/sentinel2/best_model.keras"
@@ -111,6 +111,11 @@ def evaluate_model(val_df, dataset, model, max_eval=200):
         weighted_f1     = (f1_water * (tp + fn) + f1_non_water * (tn + fp)) / total
         iou       = tp / (tp + fp + fn + 1e-7)
         accuracy  = (tp + tn) / total
+        results.append({
+            'Dataset': dataset,
+            'Threshold': t,
+            'F1': weighted_f1
+        })
 
         print(f"\n{dataset} results {t}:")
         print(f"  Accuracy : {accuracy:.4f}")
@@ -120,6 +125,7 @@ def evaluate_model(val_df, dataset, model, max_eval=200):
         print(f"  Precision: {precision:.4f}")
         print(f"  Recall   : {recall:.4f}")
         print(f"  IoU      : {iou:.4f}")
+    print(f"best threshold for {dataset}: {max(results, key=lambda x: x['F1'])['Threshold']}")
 
 
 # ---------------------------------------------------------

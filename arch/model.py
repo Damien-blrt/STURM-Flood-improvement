@@ -225,7 +225,8 @@ def unet_model(
         "weighted_jaccard_loss": weighted_jaccard_loss,
         "cce_jaccard": cce_jaccard_loss,
         "focal_jaccard": cfce_jaccard_loss,
-        "focal_tversky": focal_tversky_loss
+        "focal_tversky": focal_tversky_loss,
+        "cfce_focal_tversky": cfce_focal_tversky_loss,
     }
 
     loss = losses_dict.get(loss_function, f"{loss_function}")

@@ -46,6 +46,7 @@ s2_model_dir = './unet/sentinel2_model'
 os.makedirs(logs_dir, exist_ok=True)
 os.makedirs(sent1_log_dir, exist_ok=True)
 os.makedirs(sent2_log_dir, exist_ok=True)
+os.makedirs("cache", exist_ok=True)
 
 # ---------------------------------------------------------
 # Configuration
@@ -55,7 +56,7 @@ sent1_metadata = pd.read_csv(sent1_metadata_path)
 sent2_metadata = pd.read_csv(sent2_metadata_path)
 
 SEED = 42
-BATCH_SIZE = 8
+BATCH_SIZE = 16
 
 S1_SUBSET_SIZE = 5000 #len(sent1_metadata)
 S2_SUBSET_SIZE = len(sent2_metadata)
@@ -117,7 +118,7 @@ def create_tf_dataset(df, comp_dir, msk_dir, batch_size, cache_path=None):
     if cache_path:
         dataset = dataset.cache(cache_path)  # disque
     else:
-        dataset = dataset.cache()  # RAM (attention)
+        dataset = dataset.cache()  # RAM (carefull with large datasets)
 
     return dataset\
         .shuffle(200)\
@@ -158,22 +159,22 @@ def create_tf_dataset(df, comp_dir, msk_dir, batch_size, cache_path=None):
 
 train_dataset_sent1 = create_tf_dataset(
     sent1_train, sent1_dir, sent1_mask_dir, BATCH_SIZE,
-    cache_path="./cache_s1"
+    cache_path="./cache/cache_s1"
 )
 
 val_dataset_sent1 = create_tf_dataset(
     sent1_val, sent1_dir, sent1_mask_dir, BATCH_SIZE,
-    cache_path="./cache_s1_val"
+    cache_path="./cache/cache_s1_val"
 )
 
 train_dataset_sent2 = create_tf_dataset(
     sent2_train, sent2_dir, sent2_mask_dir, BATCH_SIZE,
-    cache_path="./cache_s2"
+    cache_path="./cache/cache_s2"
 )
 
 val_dataset_sent2 = create_tf_dataset(
     sent2_val, sent2_dir, sent2_mask_dir, BATCH_SIZE,
-    cache_path="./cache_s2_val"
+    cache_path="./cache/cache_s2_val"
 )
 test_dataset_sent1 = create_tf_dataset(sent1_test, sent1_dir, sent1_mask_dir, BATCH_SIZE)
 test_dataset_sent2 = create_tf_dataset(sent2_test, sent2_dir, sent2_mask_dir, BATCH_SIZE)
@@ -330,7 +331,9 @@ model_sent1 = unet_model(tile_width=128,
                          n_blocks=5,
                          metrics=custom_metrics,
                          class_weight_list=weights_s1,
-                         loss_function="categorical_focal_crossentropy", # loss_function="focal_tversky""
+                         loss_function="categorical_focal_crossentropy",
+                         #loss_function="cfce_focal_tversky",
+                         #loss_function="focal_tversky",
                          # optimizer=opt #not necessary
                          )
 
@@ -344,7 +347,9 @@ model_sent2 = unet_model(tile_width=128,
                         n_blocks=5,
                         metrics=custom_metrics,
                         class_weight_list=weights_s2,
-                        loss_function="categorical_focal_crossentropy", # loss_function="focal_tversky""
+                        loss_function="categorical_focal_crossentropy", 
+                        #loss_function="cfce_focal_tversky",
+                        #loss_function="focal_tversky",
                         )
 #weight_path_sent2 = os.path.join(s2_model_dir, 'unet/1/model_weights.hdf5')
 #model_sent2.load_weights(weight_path_sent2)
@@ -368,6 +373,7 @@ checkpoint_s1 = tf.keras.callbacks.ModelCheckpoint(
     mode='max',
     save_best_only=True,
     verbose=1
+
 )
 tensorboard_callback_sent1 = tf.keras.callbacks.TensorBoard(
     log_dir=sent1_log_dir,
@@ -426,8 +432,6 @@ history_sent2 = model_sent2.fit(
     epochs=40, #never put 0 put 1 instead if you want to skip
     callbacks=[tensorboard_callback_sent2, checkpoint_s2],
     verbose=2,
-    
-
 )
 print(f"\nTraining completed. TensorBoard logs are saved in: {logs_dir}/sent2")
 
@@ -495,10 +499,10 @@ def evaluate_model(val_df, dataset, model, is_s2=False, max_viz=5, max_eval=100,
         mean_metrics = {
             'Accuracy': accuracy, 'Weighted F1': weighted_f1,
             'Dice Water': f1_eau, 'Dice Non-Water': f1_non_eau, 'Precision': precision,
-            'Recall': recall, 'IoU': iou, '===threshold====': t
+            'Recall': recall, 'IoU': iou, '===threshold====': t, "water true positives": tp, "water false positives": fp, "water false negatives": fn, "water true negatives": tn
         }
 
-        print(f"\n{dataset} — Métriques globales pixel-wise:")
+        print(f"\n{dataset} — Global Metrics  pixel-wise:")
         for k, v in mean_metrics.items():
             print(f"  {k}: {v:.4f}")
         results.append(mean_metrics)
@@ -508,8 +512,10 @@ def evaluate_model(val_df, dataset, model, is_s2=False, max_viz=5, max_eval=100,
 
 model_sent1.load_weights(f"{s1_save_dir}/best_model.keras")
 model_sent2.load_weights(f"{s2_save_dir}/best_model.keras")
-thresholds = [0.55, 0.5, 0.45, 0.4]
-metrics_s1 = evaluate_model(sent1_test, 'Sentinel-1', model_sent1, is_s2=False, max_viz=10, threshold=thresholds)
-metrics_s2 = evaluate_model(sent2_test, 'Sentinel-2', model_sent2, is_s2=True,  max_viz=10, threshold=thresholds)
+thresholds = [0.5, 0.45, 0.4,0.35]
+if(history_sent1 is not None):
+    metrics_s1 = evaluate_model(sent1_test, 'Sentinel-1', model_sent1, is_s2=False, max_viz=10, threshold=thresholds)
+if(history_sent2 is not None):
+    metrics_s2 = evaluate_model(sent2_test, 'Sentinel-2', model_sent2, is_s2=True,  max_viz=10, threshold=thresholds, max_eval=len(sent2_test))
 
-os.system('rm cache*')
+os.system('rm -rf cache')
