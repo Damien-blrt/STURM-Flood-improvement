@@ -57,11 +57,14 @@ if choice == '1':
             S1_SUBSET_SIZE = len(sent1_metadata)
         BATCH_SIZE = int(input("Enter the batch size for Sentinel-1: (default 16) "))
         init_threshold = float(input("Enter the initial threshold for metrics calculation: (default 0.5) "))
+        print("Choose loss function for Sentinel-1: 1 for categorical focal crossentropy, 2 for cfce focal tversky, 3 for focal tversky")
+        loss_choice_s1 = input("Enter your choice: ")
     else:
         s1_epochs = 40
         S1_SUBSET_SIZE = 5000 #len(sent1_metadata)
         BATCH_SIZE = 16
         init_threshold = 0.5
+        loss_choice_s1 = '1'
     s1_train_size = int(S1_SUBSET_SIZE * 0.8)
     s1_val_size   = int(S1_SUBSET_SIZE * 0.1)
     sent1_subset = sent1_metadata.sample(n=S1_SUBSET_SIZE, random_state=SEED).reset_index(drop=True)
@@ -91,11 +94,14 @@ elif choice == '2':
             S2_SUBSET_SIZE = len(sent2_metadata)
         BATCH_SIZE = int(input("Enter the batch size for Sentinel-2: (default 16) "))
         init_threshold = float(input("Enter the initial threshold for metrics calculation: (default 0.5) "))
+        print("Choose loss function for Sentinel-2: 1 for categorical focal crossentropy, 2 for cfce focal tversky, 3 for focal tversky")
+        loss_choice_s2 = input("Enter your choice: ")
     else:
         s2_epochs = 40
         S2_SUBSET_SIZE = len(sent2_metadata)
         BATCH_SIZE = 16
         init_threshold = 0.5
+        loss_choice_s2 = '1'
     s2_train_size = int(S2_SUBSET_SIZE * 0.8)
     s2_val_size   = int(S2_SUBSET_SIZE * 0.1)
     sent2_subset = sent2_metadata.sample(n=S2_SUBSET_SIZE, random_state=SEED).reset_index(drop=True)
@@ -144,6 +150,10 @@ elif choice == '3':
 
         BATCH_SIZE = int(input("Enter the batch size for both datasets: (default 16) "))
         init_threshold = float(input("Enter the initial threshold for metrics calculation: (default 0.5) "))
+        print("Choose loss function for Sentinel-1: 1 for categorical focal crossentropy, 2 for cfce focal tversky, 3 for focal tversky")
+        loss_choice_s1 = input("Enter your choice: ")
+        print("Choose loss function for Sentinel-2: 1 for categorical focal crossentropy, 2 for cfce focal tversky, 3 for focal tversky")
+        loss_choice_s2 = input("Enter your choice: ")
     else:
         s1_epochs = 40
         s2_epochs = 40
@@ -151,6 +161,8 @@ elif choice == '3':
         S2_SUBSET_SIZE = len(sent2_metadata)
         BATCH_SIZE = 16
         init_threshold = 0.5
+        loss_choice_s1 = '1'
+        loss_choice_s2 = '1'
     s1_train_size = int(S1_SUBSET_SIZE * 0.8)
     s1_val_size   = int(S1_SUBSET_SIZE * 0.1)
     s2_train_size = int(S2_SUBSET_SIZE * 0.8)
@@ -165,6 +177,22 @@ elif choice == '3':
     sent2_test  = sent2_subset.iloc[s2_train_size + s2_val_size:]
     print(f"Sentinel-1: {len(sent1_train)} train, {len(sent1_val)} val, {len(sent1_test)} test.")
     print(f"Sentinel-2: {len(sent2_train)} train, {len(sent2_val)} val, {len(sent2_test)} test.")
+
+if choice in ['1', '3']:
+    if loss_choice_s1 == '2':
+        loss_function_s1 = "cfce_focal_tversky"
+    elif loss_choice_s1 == '3':
+        loss_function_s1 = "focal_tversky"
+    else:
+        loss_function_s1 = "categorical_focal_crossentropy"
+
+if choice in ['2', '3']:
+    if loss_choice_s2 == '2':
+        loss_function_s2 = "cfce_focal_tversky"
+    elif loss_choice_s2 == '3':
+        loss_function_s2 = "focal_tversky"
+    else:
+        loss_function_s2 = "categorical_focal_crossentropy"
 
 
 # ---------------------------------------------------------
@@ -410,10 +438,7 @@ if choice in ['1', '3']:
                             n_blocks=5,
                             metrics=custom_metrics,
                             class_weight_list=weights_s1,
-                            loss_function="categorical_focal_crossentropy",
-                            #loss_function="cfce_focal_tversky",
-                            #loss_function="focal_tversky",
-                            #optimizer=opt #not necessary
+                            loss_function=loss_function_s1,
                             )
 
     #weight_path_sent1 = os.path.join(s1_model_dir, 'unet/1/model_weights.hdf5')
@@ -426,9 +451,7 @@ if choice in ['2', '3']:
                             n_blocks=5,
                             metrics=custom_metrics,
                             class_weight_list=weights_s2,
-                            loss_function="categorical_focal_crossentropy", 
-                            #loss_function="cfce_focal_tversky",
-                            #loss_function="focal_tversky",
+                            loss_function=loss_function_s2,
                             )
     #weight_path_sent2 = os.path.join(s2_model_dir, 'unet/1/model_weights.hdf5')
     #model_sent2.load_weights(weight_path_sent2)
