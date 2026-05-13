@@ -21,29 +21,27 @@ class TverskyLoss(tf.keras.losses.Loss):
         tversky = (true_positives + self.smooth) / (true_positives + self.alpha * false_positives + self.beta * false_negatives + self.smooth) # epsilon
         return 1 - tversky
 
-# Focal Tversky loss ref. https://arxiv.org/abs/1810.07842 it helps to apply a focal factor to down-weight easy examples and focus more on hard examples.
+
+
+#Focal Tversky loss ref. https://arxiv.org/abs/1810.07842
 class FocalTverskyLoss(tf.keras.losses.Loss):
-    def __init__(self, gamma=1.33, alpha=0.4, beta=0.6, smooth=1e-6):
-        super().__init__()
+    def __init__(self, gamma=1.33, alpha=0.4, beta=0.6, smooth=1e-6, name='focal_tversky'):
+        super().__init__(name=name)
         self.gamma = gamma
         self.alpha = alpha
         self.beta = beta
         self.smooth = smooth
-
-    def call(self, y_true, y_pred):
-
-        y_true = y_true[..., 1]
-        y_pred = y_pred[..., 1]
-
-        tp = tf.reduce_sum(y_true * y_pred)
-        fp = tf.reduce_sum((1 - y_true) * y_pred)
-        fn = tf.reduce_sum(y_true * (1 - y_pred))
-
-        tversky = (tp + self.smooth) / (
-            tp + self.alpha * fp + self.beta * fn + self.smooth
+        self.tversky = TverskyLoss(
+            alpha=self.alpha, beta=self.beta, smooth=self.smooth
         )
+    
+    def call(self, y_true, y_pred):
+        loss = self.tversky(y_true, y_pred)
+        return K.pow(loss, self.gamma)
 
-        return tf.pow((1 - tversky), self.gamma)
+
+
+
 # # Sørensen–Dice coefficient - F1-score based loss
 # def dice_loss(y_true, y_pred):
 #     smooth = 0.5
@@ -132,4 +130,4 @@ def cfce_dice_loss(y_true, y_pred):
 def cfce_jaccard_loss(y_true, y_pred):
     return cfce(y_true, y_pred) + jaccard_loss(y_true, y_pred)
 def cfce_focal_tversky_loss(y_true, y_pred):
-    return 0.7 *cfce(y_true, y_pred) + 0.3 *focal_tversky_loss(y_true, y_pred)
+    return 0.6 * cfce(y_true, y_pred) + 0.4 * focal_tversky_loss(y_true, y_pred)
