@@ -381,24 +381,57 @@ def evaluate_model(
     print(f"\nBest threshold for {dataset}:")
     print(f"  Threshold: {best['Threshold']}")
     print(f"  Weighted F1: {best['Weighted F1']:.4f}")
+    return results
 
 # ---------------------------------------------------------
-# Run evaluations
+# Run evaluations and result graph
 # ---------------------------------------------------------
 
 if 'Sentinel-1' in datasets_to_eval:
 
-    evaluate_model(
+    result_sent1 = evaluate_model(
         sent1_test,
         'Sentinel-1',
         model_s1,
         is_s2=False,
         max_viz=10
     )
+    metrics_to_plot = [
+        'Accuracy',
+        'Weighted F1',
+        'Dice Water',
+        'Dice Non-Water',
+        'Precision',
+        'Recall',
+        'IoU',
+        'TP',
+        'FP',
+        'FN',
+        'TN'
+    ]
+    df = pd.DataFrame(result_sent1)
+    for metric in metrics_to_plot:
+        plt.figure(figsize=(8, 5))
+        plt.plot(
+            df['Threshold'],
+            df[metric],
+            marker='o'
+        )
+        plt.xlabel('Threshold')
+        plt.ylabel(metric)
+        plt.title(f'{metric} vs Threshold')
+        plt.grid(True)
+        plt.savefig(
+            os.path.join(
+                visualization_dir,
+                f"{metric.replace(' ', '_').lower()}.png"
+            )
+        )
+        plt.close()
 
 if 'Sentinel-2' in datasets_to_eval:
 
-    evaluate_model(
+    result_sent2 = evaluate_model(
         sent2_test,
         'Sentinel-2',
         model_s2,
@@ -406,6 +439,39 @@ if 'Sentinel-2' in datasets_to_eval:
         max_eval=len(sent2_test),
         max_viz=10
     )
+    metrics_to_plot = [
+        'Accuracy',
+        'Weighted F1',
+        'Dice Water',
+        'Dice Non-Water',
+        'Precision',
+        'Recall',
+        'IoU',
+        'TP',
+        'FP',
+        'FN',
+        'TN'
+    ]
+    df = pd.DataFrame(result_sent2)
+    for metric in metrics_to_plot:
+        plt.figure(figsize=(8, 5))
+        plt.plot(
+            df['Threshold'],
+            df[metric],
+            marker='o'
+        )
+        plt.xlabel('Threshold')
+        plt.ylabel(metric)
+        plt.title(f'{metric} vs Threshold')
+        plt.grid(True)
+        plt.savefig(
+            os.path.join(
+                visualization_dir,
+                f"{metric.replace(' ', '_').lower()}.png"
+            )
+        )
+        plt.close()
+
 
 # ---------------------------------------------------------
 # CLEAN ONLY TEMP PREDICTIONS
