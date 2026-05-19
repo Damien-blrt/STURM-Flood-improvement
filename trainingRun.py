@@ -16,6 +16,7 @@ from sklearn.metrics import f1_score, precision_score, recall_score, jaccard_sco
 sys.path.append('./arch')
 sys.path.append('./utils')
 from model import unet_model
+from resUnetModel import resunet_model
 #from resUnetModel import resunet_model
 
 # ---------------------------------------------------------
@@ -27,11 +28,18 @@ os.system('rm -rf logs')
 #os.system('rm -rf ./logs/sent1/*')
 #os.system('rm -rf ./logs/sent2/*')
 
-run_id = datetime.now().strftime("%Y%m%d_%H%M%S")
+repo_choice = input("Set a custom name for the saved run repository ? (D for default)")
+if (repo_choice != 'd' and repo_choice != 'D'):
+    run_id = repo_choice
+else:
+    run_id = datetime.now().strftime("%Y%m%d_%H%M%S")
 logs_dir = "./logs"
 base_dir = "./STURM-Flood/Dataset"
 os.makedirs(logs_dir, exist_ok=True)
 os.makedirs("cache", exist_ok=True)
+
+model_choice = input("Wich Model you want to train (U for Unet & R for ResUnet)")
+
 
 print("On wich dataset do you want to train ? (1 for Sentinel-1, 2 for Sentinel-2, 3 for both)")
 choice = input("Enter your choice: ")
@@ -61,7 +69,8 @@ if choice == '1':
         loss_choice_s1 = input("Enter your choice: ")
     else:
         s1_epochs = 40
-        S1_SUBSET_SIZE = 5000 #len(sent1_metadata)
+        S1_SUBSET_SIZE = 5000 
+        #S1_SUBSET_SIZE = len(sent1_metadata)
         BATCH_SIZE = 16
         init_threshold = 0.5
         loss_choice_s1 = '1'
@@ -431,35 +440,56 @@ weights_s2 = [1.0, 1.0]
 # opt = tf.keras.optimizers.Adam(learning_rate=1e-4) # lower learning rate for better convergence with the focal loss, but it will take more time to train
 
 if choice in ['1', '3']:
-    model_sent1 = unet_model(tile_width=128, 
-                            tile_height=128, 
-                            n_bands=2, 
-                            n_classes=2, 
-                            n_blocks=5,
-                            metrics=custom_metrics,
-                            class_weight_list=weights_s1,
-                            loss_function=loss_function_s1,
-                            )
+    if model_choice in ['R', 'r']:
+        model_sent1 = resunet_model(tile_width=128, 
+                                    tile_height=128, 
+                                    n_bands=2, 
+                                    n_classes=2, 
+                                    n_blocks=5,
+                                    class_weight_list=weights_s1,
+                                    loss_function=loss_function_s1,
+                                    metrics=custom_metrics)
+    else:
+        model_sent1 = unet_model(tile_width=128, 
+                        tile_height=128, 
+                        n_bands=2, 
+                        n_classes=2, 
+                        n_blocks=5,
+                        metrics=custom_metrics,
+                        class_weight_list=weights_s1,
+                        loss_function=loss_function_s1,
+                        )
 
     #weight_path_sent1 = os.path.join(s1_model_dir, 'unet/1/model_weights.hdf5')
     #model_sent1.load_weights(weight_path_sent1)
 if choice in ['2', '3']:
-    model_sent2 = unet_model(tile_width=128,
-                            tile_height=128,
-                            n_bands=9,
-                            n_classes=2,
-                            n_blocks=5,
-                            metrics=custom_metrics,
-                            class_weight_list=weights_s2,
-                            loss_function=loss_function_s2,
-                            )
+    if model_choice in ['R', 'r']:
+        model_sent2 = resunet_model(tile_width=128,
+                                    tile_height=128,
+                                    n_bands=9,
+                                    n_classes=2,
+                                    n_blocks=5,
+                                    class_weight_list=weights_s2,
+                                    loss_function=loss_function_s2,
+                                    metrics=custom_metrics)
+    else:
+        model_sent2 = unet_model(tile_width=128,
+                                tile_height=128,
+                                n_bands=9,
+                                n_classes=2,
+                                n_blocks=5,
+                                metrics=custom_metrics,
+                                class_weight_list=weights_s2,
+                                loss_function=loss_function_s2,
+                                )
     #weight_path_sent2 = os.path.join(s2_model_dir, 'unet/1/model_weights.hdf5')
     #model_sent2.load_weights(weight_path_sent2)
 
+
+
 # ---------------------------------------------------------
 # Training with TensorBoard
-# --------------------------------------------------------- 
-
+# ---------------------------------------------------------
 # Callbacks S1
 # could stop before the best model for sent-1
 if choice in ['1', '3']:
@@ -709,6 +739,7 @@ def evaluate_model(val_df, dataset, model, is_s2=False,
     return results
 
 
+
 thresholds = [0.5, 0.45, 0.4, 0.35, 0.3]
 
 # ---------------------------------------------------------
@@ -733,7 +764,6 @@ if choice in ['1', '3']:
 # ---------------------------------------------------------
 
 if choice in ['2', '3']:
-
     model_sent2.load_weights(f"{s2_save_dir}/best_model.keras")
 
     metrics_s2 = evaluate_model(

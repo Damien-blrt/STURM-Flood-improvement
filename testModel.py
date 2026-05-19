@@ -3,6 +3,7 @@ import shutil
 import pandas as pd
 import tensorflow as tf
 import matplotlib.pyplot as plt
+import numpy as np
 import sys
 
 sys.path.append('./utils')
@@ -16,7 +17,8 @@ from utils.visualization import visualize_tile
 
 base_dir = "./STURM-Flood/Dataset"
 
-thresholds = [0.55, 0.5, 0.45, 0.4, 0.35, 0.3]
+#thresholds = [0.3,3.5,4,0.45,0.5]
+thresholds = np.arange(0.1,0.4,0.01)
 
 SEED = 42
 
@@ -25,7 +27,6 @@ SEED = 42
 # ---------------------------------------------------------
 
 print("Do you want to save the visualisations of the predictions? (y/n)")
-
 save_visuals = input().strip().lower() == 'y'
 
 # ---------------------------------------------------------
@@ -232,7 +233,7 @@ def evaluate_model(
             f"threshold_{t:.2f}"
         )
 
-        os.makedirs(threshold_visual_dir, exist_ok=True)
+        
 
         # -------------------------------------------------
         # METRICS
@@ -333,6 +334,7 @@ def evaluate_model(
         # -------------------------------------------------
 
         if save_visuals:
+            os.makedirs(threshold_visual_dir, exist_ok=True)
 
             print(
                 f"\nSaving {max_viz} visualizations "

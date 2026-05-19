@@ -13,7 +13,7 @@ class TverskyLoss(tf.keras.losses.Loss):
         self.smooth = smooth
         self.alpha = alpha
         self.beta = beta
-    def call(self, y_true, y_pred):
+    def call(self, y_true, y_pred): 
         axis_to_reduce = range(1, K.ndim(y_pred))  # All axis but first (batch)
         true_positives = tf.reduce_sum(y_true * y_pred, axis=axis_to_reduce)
         false_positives = tf.reduce_sum((1 - y_true) * y_pred, axis=axis_to_reduce)
@@ -25,7 +25,7 @@ class TverskyLoss(tf.keras.losses.Loss):
 
 #Focal Tversky loss ref. https://arxiv.org/abs/1810.07842
 class FocalTverskyLoss(tf.keras.losses.Loss):
-    def __init__(self, gamma=1.33, alpha=0.1, beta=0.9, smooth=1e-6, name='focal_tversky'):
+    def __init__(self, gamma=1.33, alpha=0.05, beta=0.95, smooth=1e-6, name='focal_tversky'):
         super().__init__(name=name)
         self.gamma = gamma
         self.alpha = alpha
@@ -130,4 +130,4 @@ def cfce_dice_loss(y_true, y_pred):
 def cfce_jaccard_loss(y_true, y_pred):
     return cfce(y_true, y_pred) + jaccard_loss(y_true, y_pred)
 def cfce_focal_tversky_loss(y_true, y_pred):
-    return 0.6 * cfce(y_true, y_pred) + 0.4 * focal_tversky_loss(y_true, y_pred)
+    return 0.9 * cfce(y_true, y_pred) + 0.1 * focal_tversky_loss(y_true, y_pred)
