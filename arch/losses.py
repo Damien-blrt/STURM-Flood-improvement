@@ -25,20 +25,25 @@ class TverskyLoss(tf.keras.losses.Loss):
 
 #Focal Tversky loss ref. https://arxiv.org/abs/1810.07842
 class FocalTverskyLoss(tf.keras.losses.Loss):
-    def __init__(self, gamma=1.33, alpha=0.05, beta=0.95, smooth=1e-6, name='focal_tversky'):
+    def __init__(self, gamma=1.33, alpha=0.3, beta=0.7, smooth=1e-6, name='focal_tversky'):
         super().__init__(name=name)
         self.gamma = gamma
         self.alpha = alpha
         self.beta = beta
         self.smooth = smooth
-        self.tversky = TverskyLoss(
-            alpha=self.alpha, beta=self.beta, smooth=self.smooth
-        )
-    
-    def call(self, y_true, y_pred):
-        loss = self.tversky(y_true, y_pred)
-        return K.pow(loss, self.gamma)
 
+    def call(self, y_true, y_pred):
+        y_true_w = y_true[..., 1]
+        y_pred_w = y_pred[..., 1]
+
+        tp = tf.reduce_sum(y_true_w * y_pred_w)
+        fp = tf.reduce_sum((1 - y_true_w) * y_pred_w)
+        fn = tf.reduce_sum(y_true_w * (1 - y_pred_w))
+
+        tversky = (tp + self.smooth) / (
+            tp + self.alpha * fp + self.beta * fn + self.smooth
+        )
+        return tf.pow(1 - tversky, self.gamma)
 
 
 
