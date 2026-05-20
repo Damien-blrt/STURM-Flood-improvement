@@ -1,152 +1,82 @@
-# Res-UNet model: UNet with residual blocks in encoder and decoder
-# Residual connections help gradient flow and allow deeper networks
-
 from tensorflow.keras.models import Model
 from tensorflow.keras.layers import (
-    Input,
-    Conv2D,
-    MaxPooling2D,
-    UpSampling2D,
-    concatenate,
-    Conv2DTranspose,
-    BatchNormalization,
-    Dropout,
-    Add,
+    Input, Conv2D, Conv2DTranspose,
+    MaxPooling2D, concatenate,
+    BatchNormalization, Activation,
+    Add
 )
-
-from tensorflow.keras.utils import plot_model
-from tensorflow.keras import backend as K
-
-import tensorflow_addons as tfa
-from tensorflow.keras import optimizers
-
-import tensorflow as tf
-
 from tensorflow.keras.regularizers import l2
-
-import numpy as np
-
+from tensorflow.keras.optimizers import Adam
 from losses import *
 
 
-def res_conv_block(
-    inputs, n_filters, dropout_prob=0, max_pooling=True, w_decay=0, norm=True
-):
+def residual_block(x, filters, weight_decay=1e-4, stride=1):
     """
-    Residual convolutional downsampling block.
+    Standard residual block used in both encoder and decoder.
 
-    Adds a residual (shortcut) connection from the block input to its output.
-    A 1x1 Conv projection is used when the number of channels differs.
+    Structure:
+        BN -> ReLU -> Conv3x3
+        BN -> ReLU -> Conv3x3
+        + shortcut connection (identity or projection)
 
-    Arguments:
-        inputs        -- Input tensor
-        n_filters     -- Number of filters for the convolutional layers
-        dropout_prob  -- Dropout probability
-        max_pooling   -- Use MaxPooling2D to reduce spatial dimensions
-        w_decay       -- L2 regularization weight decay
-        norm          -- Apply BatchNormalization before the first conv
-    Returns:
-        next_layer, skip_connection -- Next layer and skip connection outputs
+    If the number of filters changes, a 1x1 convolution
+    is applied to the shortcut to match dimensions.
     """
-    x = inputs
-    if norm:
-        x = BatchNormalization()(x)
 
-    x = Conv2D(
-        n_filters,
-        3,
-        activation="relu",
-        padding="same",
-        kernel_initializer="he_normal",
-        kernel_regularizer=l2(w_decay),
-    )(x)
-    x = Conv2D(
-        n_filters,
-        3,
-        activation="relu",
-        padding="same",
-        kernel_initializer="he_normal",
-        kernel_regularizer=l2(w_decay),
-    )(x)
+    shortcut = x
 
-    if dropout_prob > 0:
-        x = Dropout(dropout_prob)(x)
-
-    # --- Shortcut / residual projection ---
-    # Project input to n_filters channels with a 1x1 conv so shapes match
-    shortcut = Conv2D(
-        n_filters,
-        1,
-        padding="same",
-        kernel_initializer="he_normal",
-        kernel_regularizer=l2(w_decay),
-    )(inputs)
-
-    # Residual addition
-    conv = Add()([x, shortcut])
+    x = BatchNormalization()(x)
+    x = Activation("relu")(x)
+    x = Conv2D(filters, 3, strides=stride, padding="same",
+               kernel_initializer="he_normal",
+               kernel_regularizer=l2(weight_decay))(x)
 
 
-    if max_pooling:
-        next_layer = MaxPooling2D(2, strides=2)(conv)
-    else:
-        next_layer = conv
-
-    skip_connection = conv
-
-    return next_layer, skip_connection
+    x = BatchNormalization()(x)
+    x = Activation("relu")(x)
+    x = Conv2D(filters, 3, padding="same",
+               kernel_initializer="he_normal",
+               kernel_regularizer=l2(weight_decay))(x)
 
 
-def res_upsampling_block(expansive_input, contractive_input, n_filters, norm=False):
+    if shortcut.shape[-1] != filters or stride != 1:
+        shortcut = Conv2D(filters, 1, strides=stride, padding="same",
+                          kernel_initializer="he_normal",
+                          kernel_regularizer=l2(weight_decay))(shortcut)
+
+    x = Add()([x, shortcut])
+
+    return x
+
+
+def encoder_block(x, filters, weight_decay=1e-4):
     """
-    Residual convolutional upsampling block.
-
-    After the transpose conv + skip concatenation, a residual connection
-    is added around the two Conv2D layers.
-
-    Arguments:
-        expansive_input   -- Input tensor from previous layer
-        contractive_input -- Input tensor from previous skip layer
-        n_filters         -- Number of filters for the convolutional layers
-        norm              -- Apply BatchNormalization after concatenation
-    Returns:
-        conv -- Tensor output
+    Encoder block:
+        - Residual feature extraction
+        - Skip connection stored for decoder
+        - Spatial downsampling via MaxPooling
     """
-    up = Conv2DTranspose(
-        n_filters, 3, strides=2, padding="same"
-    )(expansive_input)
-
-    merge = concatenate([up, contractive_input], axis=3)
-
-    if norm:
-        merge = BatchNormalization()(merge)
+    x = residual_block(x, filters, weight_decay)
+    skip = x
+    x = MaxPooling2D(2)(x)
+    return x, skip
 
 
-    x = Conv2D(
-        n_filters,
-        3,
-        activation="relu",
-        padding="same",
-        kernel_initializer="he_normal",
-    )(merge)
-    x = Conv2D(
-        n_filters,
-        3,
-        activation="relu",
-        padding="same",
-        kernel_initializer="he_normal",
-    )(x)
+def decoder_block(x, skip, filters, weight_decay=1e-4):
+    """
+    Decoder block:
+        - Upsampling via transposed convolution
+        - Concatenation with encoder skip connection
+        - Residual refinement block
+    """
 
-    #  Shortcut: project merged tensor to n_filters channels 
-    shortcut = Conv2D(
-        n_filters,
-        1,
-        padding="same",
-        kernel_initializer="he_normal",
-    )(merge)
+    x = Conv2DTranspose(filters, 2, strides=2, padding="same")(x)
 
-    conv = Add()([x, shortcut])
+    x = concatenate([x, skip])
 
-    return conv
+    x = residual_block(x, filters, weight_decay)
+
+    return x
 
 
 def resunet_model(
@@ -155,7 +85,7 @@ def resunet_model(
     tile_height,
     n_bands,
     n_blocks,
-    class_weight_list=[1,1],
+    class_weight_list=[1, 1],
     n_filters_start=64,
     w_decay=1e-5,
     droprate=0.3,
@@ -168,103 +98,52 @@ def resunet_model(
     metrics=["categorical_accuracy"],
 ):
     """
-    Res-UNet: UNet with residual blocks in both encoder and decoder paths.
+    ResUNet model (UNet + residual blocks)
 
     Architecture:
-        - Encoder: n_blocks residual conv blocks with max pooling (except last block)
-        - Decoder: (n_blocks - 1) residual upsampling blocks with skip connections
-        - Output: 1x1 Conv2D with softmax activation
-
-    Arguments:
-        n_classes          -- Number of output classes
-        tile_width         -- Input tile width
-        tile_height        -- Input tile height
-        n_bands            -- Number of input bands/channels
-        n_blocks           -- Total number of encoder blocks (including bottleneck)
-        class_weight_list  -- Per-class weights for weighted loss functions
-        n_filters_start    -- Number of filters in the first encoder block
-        w_decay            -- L2 regularization weight decay
-        droprate           -- Base dropout rate
-        drop_multiplier    -- Per-block dropout multipliers (list of length n_blocks)
-        weight_multiplier  -- Per-block weight decay multipliers (list of length n_blocks)
-        filter_growth      -- Filter growth factor between blocks (default: 2 = doubles)
-        normalize_inputs   -- Apply BatchNormalization in encoder blocks
-        optimizer          -- Keras optimizer (string or optimizer instance)
-        loss_function      -- Loss function key (see losses_dict) or Keras loss string
-        metrics            -- List of metrics to track during training
-    Returns:
-        model -- Compiled Keras Model
+        Encoder: residual blocks + pooling
+        Bottleneck: residual block
+        Decoder: upsampling + skip connections + residual blocks
+        Output: pixel-wise softmax segmentation
     """
+
     inputs = Input((tile_width, tile_height, n_bands))
     x = inputs
-    n_filters = n_filters_start
-    contracting_blocks = []
+
+    skips = []
 
     if drop_multiplier is None:
         drop_multiplier = [1.0] * n_blocks
-
     if weight_multiplier is None:
         weight_multiplier = [1.0] * n_blocks
 
-    # Encoder 
+    n_filters = n_filters_start
+
     for i in range(n_blocks):
-        if normalize_inputs:
-            norm = False if i == 0 else True
-        else:
-            norm = False
-
-        if i < n_blocks - 1:
-            # Downsampling block
-            x, skip = res_conv_block(
-                inputs=x,
-                n_filters=n_filters,
-                w_decay=w_decay * weight_multiplier[i],
-                dropout_prob=droprate * drop_multiplier[i],
-                norm=norm,
-            )
-            contracting_blocks.append(skip)
-        else:
-            # Bottleneck: no max pooling, no batch norm, skip connection discarded
-            x, _ = res_conv_block(
-                inputs=x,
-                n_filters=n_filters,
-                w_decay=w_decay * weight_multiplier[i],
-                dropout_prob=droprate * drop_multiplier[i],
-                max_pooling=False,
-                norm=False,
-            )
-
+        x, skip = encoder_block(x, n_filters, w_decay * weight_multiplier[i])
+        skips.append(skip)
         n_filters *= filter_growth
 
-    # Decoder
-    contracting_blocks.reverse()
-    n_filters //= filter_growth
+    
+    x = residual_block(x, n_filters, w_decay)
 
-    for i in range(n_blocks - 1):
-        norm = False
-        if normalize_inputs:
-            norm = True
-            if i == n_blocks - 2:
-                norm = False
+   
+    skips = skips[::-1]
 
+    for i in range(n_blocks):
         n_filters //= filter_growth
-        x = res_upsampling_block(
-            x, contracting_blocks[i], n_filters=n_filters, norm=norm
-        )
+        x = decoder_block(x, skips[i], n_filters, w_decay)
 
-    # Output layer
-    outputs = Conv2D(n_classes, 1, activation="softmax", padding="same")(x)
+   
+    outputs = Conv2D(n_classes, 1, activation="softmax")(x)
 
-    model = Model(inputs=inputs, outputs=outputs)
+    model = Model(inputs, outputs)
 
-    # Loss function selection
-    class_weights = class_weight_list
 
-    weighted_dice_loss = WeightedDiceLoss(class_weights)
-    weighted_jaccard_loss = WeightedJaccardLoss(class_weights)
+    weighted_dice_loss = WeightedDiceLoss(class_weight_list)
+    weighted_jaccard_loss = WeightedJaccardLoss(class_weight_list)
     focal_tversky_loss = FocalTverskyLoss()
-    alpha = class_weight_list
-    weighted_cfce = CategoricalFocalCrossentropy(alpha=alpha)
+    weighted_cfce = CategoricalFocalCrossentropy(alpha=class_weight_list)
 
     losses_dict = {
         "categorical_focal_crossentropy": cfce,
@@ -287,7 +166,7 @@ def resunet_model(
     model.compile(
         optimizer=optimizer,
         loss=loss,
-        metrics=metrics,
+        metrics=metrics
     )
 
     return model
