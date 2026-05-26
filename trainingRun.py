@@ -223,7 +223,7 @@ def translate_image_and_mask(tile_id, comp_dir, msk_dir):
 
     return img, mask
 
-def create_tf_dataset(df, comp_dir, msk_dir, batch_size, cache_path=None):
+def create_tf_dataset(df, comp_dir, msk_dir, batch_size, cache_path=None, repeat=False):
     def generator():
         for _, row in df.iterrows():
             yield translate_image_and_mask(row['tile_id'], comp_dir, msk_dir)
@@ -235,16 +235,15 @@ def create_tf_dataset(df, comp_dir, msk_dir, batch_size, cache_path=None):
             tf.TensorSpec(shape=(128, 128, 2), dtype=tf.float32)
         )
     )
-
     if cache_path:
-        dataset = dataset.cache(cache_path)  # disque
+        dataset = dataset.cache(cache_path)
     else:
-        dataset = dataset.cache()  # RAM (carefull with large datasets)
+        dataset = dataset.cache()
 
-    return dataset\
-        .shuffle(200)\
-        .batch(batch_size)\
-        .prefetch(tf.data.AUTOTUNE)
+    dataset = dataset.shuffle(200).batch(batch_size)
+    if repeat:
+        dataset = dataset.repeat()
+    return dataset.prefetch(tf.data.AUTOTUNE)
 
 
 # # convert the dataframe to a tf dataset using a generator (STOPS THE KILLED ERROR)
@@ -280,7 +279,8 @@ def create_tf_dataset(df, comp_dir, msk_dir, batch_size, cache_path=None):
 if choice in ['1', '3']:
     train_dataset_sent1 = create_tf_dataset(
         sent1_train, sent1_dir, sent1_mask_dir, BATCH_SIZE,
-        cache_path="./cache/cache_s1"
+        cache_path="./cache/cache_s1",
+        repeat=True
     )
 
     val_dataset_sent1 = create_tf_dataset(
@@ -292,7 +292,8 @@ if choice in ['1', '3']:
 if choice in ['2', '3']:
     train_dataset_sent2 = create_tf_dataset(
         sent2_train, sent2_dir, sent2_mask_dir, BATCH_SIZE,
-        cache_path="./cache/cache_s2"
+        cache_path="./cache/cache_s2",
+        repeat=True
     )
 
     val_dataset_sent2 = create_tf_dataset(
@@ -437,16 +438,23 @@ custom_metrics = [
 weights_s1 = [1.0, 1.0]
 weights_s2 = [1.0, 1.0]
 
-# opt = tf.keras.optimizers.Adam(learning_rate=1e-4) # lower learning rate for better convergence with the focal loss, but it will take more time to train
 
 if choice in ['1', '3']:
+    if loss_choice_s1 == '2':
+        optimizer = tf.keras.optimizers.Adam(
+            learning_rate=1e-4,
+            clipnorm=1.0 
+        )
+    else :
+        optimizer = "adam"
     if model_choice in ['R', 'r']:
-        model_sent1 = resunet_model(tile_width=128, 
+        model_sent1 = resunet_model(tile_width=128,
                                     tile_height=128, 
                                     n_bands=2, 
                                     n_classes=2, 
-                                    n_blocks=5,
+                                    n_blocks=6,
                                     class_weight_list=weights_s1,
+                                    optimizer=optimizer,
                                     loss_function=loss_function_s1,
                                     metrics=custom_metrics)
     else:
@@ -454,15 +462,24 @@ if choice in ['1', '3']:
                         tile_height=128, 
                         n_bands=2, 
                         n_classes=2, 
-                        n_blocks=5,
+                        n_blocks=6,
                         metrics=custom_metrics,
+                        optimizer=optimizer,
                         class_weight_list=weights_s1,
                         loss_function=loss_function_s1,
                         )
 
     #weight_path_sent1 = os.path.join(s1_model_dir, 'unet/1/model_weights.hdf5')
     #model_sent1.load_weights(weight_path_sent1)
+
 if choice in ['2', '3']:
+    if loss_choice_s2 == '2':
+        optimizer = tf.keras.optimizers.Adam(
+            learning_rate=1e-4,
+            clipnorm=1.0 
+        )
+    else :
+        optimizer = "adam"
     if model_choice in ['R', 'r']:
         model_sent2 = resunet_model(tile_width=128,
                                     tile_height=128,
@@ -471,6 +488,7 @@ if choice in ['2', '3']:
                                     n_blocks=5,
                                     class_weight_list=weights_s2,
                                     loss_function=loss_function_s2,
+                                    optimizer=optimizer,
                                     metrics=custom_metrics)
     else:
         model_sent2 = unet_model(tile_width=128,
@@ -479,6 +497,7 @@ if choice in ['2', '3']:
                                 n_classes=2,
                                 n_blocks=5,
                                 metrics=custom_metrics,
+                                optimizer=optimizer,
                                 class_weight_list=weights_s2,
                                 loss_function=loss_function_s2,
                                 )
@@ -521,7 +540,7 @@ if choice in ['2', '3']:
     early_stop_s2 = tf.keras.callbacks.EarlyStopping(
         monitor='val_weighted_f1',
         mode='max',
-        patience=12,
+        patience=8,
         restore_best_weights=True,
         verbose=1
     )
@@ -545,6 +564,7 @@ if choice == '1':
         train_dataset_sent1,
         validation_data=val_dataset_sent1,
         epochs=s1_epochs,
+        steps_per_epoch=len(sent1_train),
         callbacks=[tensorboard_callback_sent1, checkpoint_s1],
         verbose=2
     )
@@ -554,6 +574,7 @@ elif choice == '2':
     history_sent2 = model_sent2.fit(
         train_dataset_sent2,
         validation_data=val_dataset_sent2,
+        steps_per_epoch=len(sent2_train),
         epochs=s2_epochs,
         callbacks=[tensorboard_callback_sent2, checkpoint_s2],
         verbose=2
@@ -574,7 +595,7 @@ elif choice == '3':
         train_dataset_sent2,
         validation_data=val_dataset_sent2,
         epochs=s2_epochs,
-        callbacks=[tensorboard_callback_sent2, checkpoint_s2],
+        callbacks=[tensorboard_callback_sent2, checkpoint_s2, early_stop_s2],
         verbose=2
     )
     print(f"\nTraining completed. TensorBoard logs are saved in: {logs_dir}/sent2")
@@ -740,7 +761,7 @@ def evaluate_model(val_df, dataset, model, is_s2=False,
 
 
 
-thresholds = [0.5, 0.45, 0.4, 0.35, 0.3]
+thresholds = [0.5,0.4]
 
 # ---------------------------------------------------------
 # Sentinel-1 evaluation
@@ -762,6 +783,8 @@ if choice in ['1', '3']:
 # ---------------------------------------------------------
 # Sentinel-2 evaluation
 # ---------------------------------------------------------
+
+
 
 if choice in ['2', '3']:
     model_sent2.load_weights(f"{s2_save_dir}/best_model.keras")

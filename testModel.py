@@ -17,8 +17,8 @@ from utils.visualization import visualize_tile
 
 base_dir = "./STURM-Flood/Dataset"
 
-#thresholds = [0.31,0.34]
-thresholds = np.arange(0.4,0.5,0.01)
+thresholds = [0.44,0.41,0.5]
+#thresholds = np.arange(0.3,0.51,0.01)
 
 SEED = 42
 
@@ -36,7 +36,7 @@ save_visuals = input().strip().lower() == 'y'
 print("\nAvailable runs:")
 
 for d in sorted(os.listdir("./save/runs")):
-
+    print("\n")
     print(f"  - {d}")
 
     if os.path.exists(f"./save/runs/{d}/sentinel1/best_model.keras"):
@@ -156,11 +156,12 @@ if 'Sentinel-1' in datasets_to_eval:
     s1_val_size = int(S1_SUBSET_SIZE * 0.1)
 
     sent1_test = sent1_subset.iloc[s1_train_size + s1_val_size:]
-
+    print("Sentinel-1 is loading (up to 5 minutes)")
     model_s1 = tf.keras.models.load_model(
         s1_model_path,
         compile=False
     )
+    print(f"\nLoaded Sentinel-1 model")
 
     print(f"\nLoaded Sentinel-1 model")
 
@@ -178,12 +179,11 @@ if 'Sentinel-2' in datasets_to_eval:
     s2_val_size = int(S2_SUBSET_SIZE * 0.1)
 
     sent2_test = sent2_subset.iloc[s2_train_size + s2_val_size:]
-
+    print("Sentinel-2 is loading (up to 5 minutes)")
     model_s2 = tf.keras.models.load_model(
         s2_model_path,
         compile=False
     )
-
     print(f"\nLoaded Sentinel-2 model")
 
 # ---------------------------------------------------------

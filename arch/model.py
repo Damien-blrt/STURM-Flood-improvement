@@ -18,7 +18,6 @@ from tensorflow.keras import backend as K
 
 # from tensorflow.keras import ops
 
-import tensorflow_addons as tfa
 from tensorflow.keras import optimizers
 
 import tensorflow as tf
@@ -249,8 +248,6 @@ def unet_model(
     # def weighted_binary_crossentropy(y_true, y_pred):
     #     class_loglosses = K.mean(K.binary_crossentropy(y_true, y_pred), axis=[0, 1, 2])
     #     return K.sum(class_loglosses * K.constant(class_weights))
-
-    f1 = tfa.metrics.F1Score(num_classes=n_classes, average=None)
 
     # Configure the model for training.
     # We use the "sparse" version of categorical_crossentropy
