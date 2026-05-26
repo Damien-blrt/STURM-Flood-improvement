@@ -10,5 +10,5 @@ inference_results
 */__pycache__/*
 arch/__pycache__/*
 *.pyc
-tmp_preds
+.tmp_preds
 cache*

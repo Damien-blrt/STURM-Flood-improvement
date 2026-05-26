@@ -558,7 +558,6 @@ if choice == '1':
         train_dataset_sent1,
         validation_data=val_dataset_sent1,
         epochs=s1_epochs,
-        steps_per_epoch=len(sent1_train) // BATCH_SIZE,
         callbacks=[tensorboard_callback_sent1, checkpoint_s1],
         verbose=2
     )
@@ -568,7 +567,6 @@ elif choice == '2':
     history_sent2 = model_sent2.fit(
         train_dataset_sent2,
         validation_data=val_dataset_sent2,
-        steps_per_epoch=len(sent2_train) // BATCH_SIZE,
         epochs=s2_epochs,
         callbacks=[tensorboard_callback_sent2, checkpoint_s2],
         verbose=2
@@ -771,7 +769,8 @@ if choice in ['1', '3']:
         model_sent1,
         is_s2=False,
         max_viz=10,
-        threshold=thresholds
+        threshold=thresholds,
+        max_eval=len(sent1_test)
     )
 
 # ---------------------------------------------------------

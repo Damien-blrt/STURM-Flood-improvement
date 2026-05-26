@@ -17,8 +17,8 @@ from utils.visualization import visualize_tile
 
 base_dir = "./STURM-Flood/Dataset"
 
-#thresholds = [0.44,0.41,0.5]
-thresholds = np.arange(0.3,0.51,0.01)
+thresholds = [0.8,0.85,0.9,0.95]
+#thresholds = np.arange(0.3,0.51,0.01)
 
 SEED = 42
 
@@ -163,7 +163,6 @@ if 'Sentinel-1' in datasets_to_eval:
     )
     print(f"\nLoaded Sentinel-1 model")
 
-    print(f"\nLoaded Sentinel-1 model")
 
 if 'Sentinel-2' in datasets_to_eval:
 
