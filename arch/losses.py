@@ -25,7 +25,7 @@ class TverskyLoss(tf.keras.losses.Loss):
 
 #Focal Tversky loss ref. https://arxiv.org/abs/1810.07842
 class FocalTverskyLoss(tf.keras.losses.Loss):
-    def __init__(self, gamma=2, alpha=0.7, beta=0.3, smooth=1.0, name='focal_tversky'):
+    def __init__(self, gamma=2.5, alpha=0.1, beta=0.9, smooth=1e-3, name='focal_tversky'):
         super().__init__(name=name)
         self.gamma = gamma
         self.alpha = alpha

@@ -222,7 +222,7 @@ def translate_image_and_mask(tile_id, comp_dir, msk_dir):
 
     return img, mask
 
-def create_tf_dataset(df, comp_dir, msk_dir, batch_size, cache_path=None, repeat=False):
+def create_tf_dataset(df, comp_dir, msk_dir, batch_size, cache_path=None):
     def generator():
         for _, row in df.iterrows():
             yield translate_image_and_mask(row['tile_id'], comp_dir, msk_dir)
@@ -240,8 +240,6 @@ def create_tf_dataset(df, comp_dir, msk_dir, batch_size, cache_path=None, repeat
         dataset = dataset.cache()
 
     dataset = dataset.shuffle(200).batch(batch_size)
-    if repeat:
-        dataset = dataset.repeat()
     return dataset.prefetch(tf.data.AUTOTUNE)
 
 
@@ -279,9 +277,7 @@ if choice in ['1', '3']:
     train_dataset_sent1 = create_tf_dataset(
         sent1_train, sent1_dir, sent1_mask_dir, BATCH_SIZE,
         cache_path="./cache/cache_s1",
-        repeat=True
     )
-
     val_dataset_sent1 = create_tf_dataset(
         sent1_val, sent1_dir, sent1_mask_dir, BATCH_SIZE,
         cache_path="./cache/cache_s1_val"
@@ -292,7 +288,6 @@ if choice in ['2', '3']:
     train_dataset_sent2 = create_tf_dataset(
         sent2_train, sent2_dir, sent2_mask_dir, BATCH_SIZE,
         cache_path="./cache/cache_s2",
-        repeat=True
     )
 
     val_dataset_sent2 = create_tf_dataset(
@@ -563,7 +558,7 @@ if choice == '1':
         train_dataset_sent1,
         validation_data=val_dataset_sent1,
         epochs=s1_epochs,
-        steps_per_epoch=len(sent1_train),
+        steps_per_epoch=len(sent1_train) // BATCH_SIZE,
         callbacks=[tensorboard_callback_sent1, checkpoint_s1],
         verbose=2
     )
@@ -573,7 +568,7 @@ elif choice == '2':
     history_sent2 = model_sent2.fit(
         train_dataset_sent2,
         validation_data=val_dataset_sent2,
-        steps_per_epoch=len(sent2_train),
+        steps_per_epoch=len(sent2_train) // BATCH_SIZE,
         epochs=s2_epochs,
         callbacks=[tensorboard_callback_sent2, checkpoint_s2],
         verbose=2
