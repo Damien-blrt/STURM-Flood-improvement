@@ -6,7 +6,6 @@ import rasterio
 import tensorflow as tf
 import matplotlib.pyplot as plt
 from tensorflow.keras.utils import to_categorical
-import tensorflow_addons as tfa
 import sys
 from utils.utility import preprocess_mask, write_geotiff
 from utils.inference_metrics import run_inference

@@ -17,7 +17,7 @@ from utils.visualization import visualize_tile
 
 base_dir = "./STURM-Flood/Dataset"
 
-thresholds = [0.44,0.41,0.5]
+#thresholds = [0.44,0.41,0.5]
 #thresholds = np.arange(0.3,0.51,0.01)
 
 SEED = 42
