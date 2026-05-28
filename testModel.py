@@ -17,8 +17,8 @@ from utils.visualization import visualize_tile
 
 base_dir = "./STURM-Flood/Dataset"
 
-thresholds = [0.8,0.85,0.9,0.95]
-#thresholds = np.arange(0.3,0.51,0.01)
+thresholds = [0.3,0.4,0.45,0.5,0.55]
+#thresholds = np.arange(0.45,0.51,0.01)
 
 SEED = 42
 
@@ -327,10 +327,7 @@ def evaluate_model(
 
         results.append(mean_metrics)
 
-        # -------------------------------------------------
-        # SAVE ONLY 10 VISUALIZATIONS
-        # EXACT SAME AS SCRIPT 1
-        # -------------------------------------------------
+        
 
         if save_visuals:
             os.makedirs(threshold_visual_dir, exist_ok=True)
@@ -395,7 +392,8 @@ if 'Sentinel-1' in datasets_to_eval:
         'Sentinel-1',
         model_s1,
         is_s2=False,
-        max_viz=10
+        max_viz=10,
+        max_eval = len(sent1_test)
     )
     metrics_to_plot = [
         'Accuracy',
