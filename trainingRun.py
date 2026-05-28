@@ -434,7 +434,7 @@ weights_s2 = [1.0, 1.0]
 
 
 if choice in ['1', '3']:
-    if loss_choice_s1 == '2':
+    if loss_choice_s1 != '2':
         optimizer = tf.keras.optimizers.Adam(
             learning_rate=1e-4,
             clipnorm=1.0 
