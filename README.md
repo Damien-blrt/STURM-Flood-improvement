@@ -55,6 +55,7 @@ run the container:
 ```bash
 docker run --rm --gpus all -it \
 -p 8888:8888 \
+-u $(id -u):$(id -g) \
 -v ~/[local path to repo]:/workspace \
 [Name image] \
 jupyter notebook --ip=0.0.0.0 --allow-root --no-browser
