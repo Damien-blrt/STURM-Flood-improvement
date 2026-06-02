@@ -434,13 +434,10 @@ weights_s2 = [1.0, 1.0]
 
 
 if choice in ['1', '3']:
-    if loss_choice_s1 != '2':
-        optimizer = tf.keras.optimizers.Adam(
-            learning_rate=1e-4,
-            clipnorm=1.0 
-        )
-    else :
-        optimizer = "adam"
+    optimizer = tf.keras.optimizers.Adam(
+        learning_rate=1e-4,
+        clipnorm=1.0 
+    )
     if model_choice in ['R', 'r']:
         model_sent1 = resunet_model(tile_width=128,
                                     tile_height=128, 
@@ -467,13 +464,10 @@ if choice in ['1', '3']:
     #model_sent1.load_weights(weight_path_sent1)
 
 if choice in ['2', '3']:
-    if loss_choice_s2 == '2':
-        optimizer = tf.keras.optimizers.Adam(
-            learning_rate=1e-4,
-            clipnorm=1.0 
-        )
-    else :
-        optimizer = "adam"
+    optimizer = tf.keras.optimizers.Adam(
+        learning_rate=1e-4,
+        clipnorm=1.0 
+    )
     if model_choice in ['R', 'r']:
         model_sent2 = resunet_model(tile_width=128,
                                     tile_height=128,
