@@ -202,6 +202,8 @@ if 'Sentinel-2' in datasets_to_eval:
     composite_dirs['Sentinel-2'] = sent2_dir
     mask_dirs['Sentinel-2'] = sent2_mask_dir
 
+
+
 # ---------------------------------------------------------
 # Evaluation function
 # ---------------------------------------------------------
