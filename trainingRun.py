@@ -703,7 +703,7 @@ def evaluate_model(val_df, dataset, model, is_s2=False,
             else:
                 print(f"  {k}: {v}")
 
-        results.append(mean_metrics)
+        results.append(mean_metrics)    
 
     best = max(results, key=lambda x: x['Weighted F1'])
 
@@ -785,7 +785,7 @@ if choice in ['2', '3']:
         threshold=thresholds,
         max_eval=len(sent2_test)
     )
-
+    
 # ---------------------------------------------------------
 # Cleanup
 # ---------------------------------------------------------
